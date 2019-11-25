@@ -23,8 +23,8 @@ class Derp:
         model.summary()
     
     def train(self, n_iters, X_train, T_train, Y_train, X_val, Y_val):
-        T_train = np.argmax(T_train, axis=1)
-        idxs = np.array([np.argwhere(T_train == t) for t in range(self.n_treatments)])
+        ts = np.argmax(T_train, axis=1)
+        idxs = np.array([np.argwhere(ts==t).flatten() for t in range(self.n_treatments)])
         losses = [0] * self.n_treatments
         for it in tqdm(range(n_iters)):
             for t in range(self.n_treatments):
