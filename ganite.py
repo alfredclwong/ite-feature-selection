@@ -41,7 +41,7 @@ class GANITE():
                 X, Yf, T, Z = get_batch()
                 Y_pred = self.generator.predict([X, Yf, T, Z])
                 Y_bar = (T.T * Yf).T + (1.-T) * Y_pred
-                d_loss = self.discriminator.train_on_batch([X, Y_bar], T)
+                d_loss, d_acc = self.discriminator.train_on_batch([X, Y_bar], T)
 
             # Train G over k2 batches per epoch
             for i in range(self.k2):
@@ -52,7 +52,7 @@ class GANITE():
                 Z_val = self.sample_Z(X_val.shape[0])
                 Y_pred_val = self.generator.predict([X_val, Yf_val, T_val, Z_val])
                 g_mse_val = np.mean(np.square(Y_pred_val - Y_val))
-                print(f'Epoch: {epoch}\nD loss: {d_loss:.4f}\nG loss: {g_loss:.4f}\nMSE (val): {g_mse_val:.4f}')
+                print(f'Epoch: {epoch}\nD loss: {d_loss:.4f}\tD acc: {d_acc:.4f}\nG loss: {g_loss:.4f}\tMSE (val): {g_mse_val:.4f}')
 
         # Train I
         for epoch in tqdm(range(n_epochs[1])):
@@ -85,7 +85,7 @@ class GANITE():
         # Define D loss and compile
         def d_loss_fn():
             return losses.categorical_crossentropy
-        discriminator.compile(loss=d_loss_fn(), optimizer=optimizer)
+        discriminator.compile(loss=d_loss_fn(), optimizer=optimizer, metrics=['categorical_accuracy'])
 
         # Build GAN model
         X = Input(shape=(self.n_features,), name='X')
