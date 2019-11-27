@@ -1,3 +1,4 @@
+import os
 from keras.layers import Dense, Input, Concatenate
 from keras.initializers import Constant
 from keras.models import Model
@@ -58,7 +59,8 @@ class INVASE:
         y = Dense(1, activation='sigmoid')(H)
         return Model(X, y)
 
-    def train(self, n_iters, X, Y, batch_size=32):
+    def train(self, n_iters, X, Y, X_val=None, Y_val=None, batch_size=32):
+        val = X_val is not None and Y_val is not None
         N = X.shape[0]
         sele_loss = np.zeros(self.n_treatments)
         pred_loss = np.zeros(self.n_treatments)
@@ -78,8 +80,15 @@ class INVASE:
                 pred_loss[t] = self.predictors[t].train_on_batch([x, s], y_fact)
                 base_loss[t] = self.baselines[t].train_on_batch(X[idx], y_fact)
                 feat_prob[t,:] = np.mean(S, axis=0)
-            if it % (n_iters//10) == 0:
+            if (it+1) % (n_iters//10) == 0:
                 sele_loss_str, pred_loss_str, base_loss_str = map(np.array2string, [sele_loss, pred_loss, base_loss])
+                if val:
+                    Y_pred, _ = self.predict(X_val)
+                    pred_mse = np.mean(np.square(Y_val - Y_pred))
+                    Y_base = np.concatenate([baseline.predict(X_val) for baseline in self.baselines], axis=1)
+                    base_mse = np.mean(np.square(Y_val - Y_base))
+                    pred_loss_str += f'\tval mse {pred_mse:.4f}'
+                    base_loss_str += f'\tval mse {base_mse:.4f}'
                 print(f'#{it}:\tsele loss {sele_loss_str}\n\tpred loss {pred_loss_str}\n\tbase loss {base_loss_str}')
                 print(f'features\n{np.array2string(feat_prob)}')
 
@@ -97,12 +106,19 @@ class INVASE:
 
 
 if __name__ == '__main__':
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     np.set_printoptions(formatter={"float_kind": lambda x: f"{x:.4f}"})
-    X, t, Y = synthetic_data(models=[1,2,3])
+    X, t, Y = synthetic_data()
     N, n_features = X.shape
     n_treatments = Y.shape[1]
     invase = INVASE(n_features, n_treatments)
-    invase.train(10000, X, Y)
-    Y_pred, ss = invase.predict(X)
+    
+    N_train = int(0.8 * N)
+    X_train = X[N_train:]
+    Y_train = Y[N_train:]
+    X_test = X[:N_train]
+    Y_test = Y[:N_train]
+    invase.train(20000, X_train, Y_train, X_test, Y_test)
+    Y_pred, ss = invase.predict(X_test)
     X_str, Y_str, t_str, Y_pred_str, ss_str = map(np.array2string, [X, Y, t, Y_pred, ss.astype(int)])
     print('\n'.join(['X', X_str, 'Y', Y_str, 't', t_str, 'Y_pred', Y_pred_str, 'ss', ss_str]))

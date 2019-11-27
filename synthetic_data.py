@@ -18,7 +18,7 @@ def get_X(csv_path=None, N=10000, n_features=10):
     if csv_path:
         data = pd.read_csv(csv_path)
         features = data.keys()[:-2]
-        X = twin_data[features].values
+        X = data[features].values
     else:
         # x[i] ~ N(mean, cov)
         # where mean = 0
