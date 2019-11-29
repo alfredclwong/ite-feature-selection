@@ -9,6 +9,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from synthetic_data import synthetic_data
+from metrics import PEHE
 
 
 class GANITE():
@@ -51,8 +52,12 @@ class GANITE():
             if epoch % (n_epochs[0]//5) == 0:
                 Z_val = self.sample_Z(X_val.shape[0])
                 Y_pred_val = self.generator.predict([X_val, Yf_val, T_val, Z_val])
-                g_mse_val = np.mean(np.square(Y_pred_val - Y_val))
-                print(f'Epoch: {epoch}\nD loss: {d_loss:.4f}\tD acc: {d_acc:.4f}\nG loss: {g_loss:.4f}\tMSE (val): {g_mse_val:.4f}')
+                g_mse_val = 0
+                g_pehe_val = 0
+                if Y_val is not None:
+                    g_mse_val = np.mean(np.square(Y_pred_val - Y_val))
+                    g_pehe_val = PEHE(Y_val, Y_pred_val)
+                print(f'Epoch: {epoch}\nD loss: {d_loss:.4f}\tD acc: {d_acc:.4f}\nG loss: {g_loss:.4f}\tMSE (val): {g_mse_val:.4f}\tPEHE (val): {g_pehe_val:.4f}')
 
         # Train I
         for epoch in tqdm(range(n_epochs[1])):
@@ -64,7 +69,8 @@ class GANITE():
             if epoch % (n_epochs[1]//5) == 0:
                 Y_pred_val = self.predict(X_val)
                 i_mse_val = np.mean(np.square(Y_pred_val - Y_val))
-                print(f'Epoch: {epoch}\nI loss (train): {i_loss:.4f}\nI MSE (val): {i_mse_val:.4f}')
+                i_pehe_val = PEHE(Y_val, Y_pred_val)
+                print(f'Epoch: {epoch}\nI loss (train): {i_loss:.4f}\nI MSE (val): {i_mse_val:.4f}\tI PEHE (val): {i_pehe_val:.4f}')
 
     def predict_counterfactuals(self, X, Yf, T):
         Z = self.sample_Z(X.shape[0])
@@ -178,16 +184,15 @@ class GANITE():
 if __name__ == '__main__':
     np.set_printoptions(formatter={'float_kind': lambda x: f'{x:.4f}'})
     
-    synthetic = True
-    if synthetic:
-        X, t, Y = synthetic_data(n_features=10, n_treatments=2)
+    data = 'Jobs_Lalonde_Data.csv'
+    have_cfs = True
+    if data is None:
+        X, t, Y = synthetic_data(n_features=30, models=[1,2])
         N, n_features = X.shape
         n_treatments = Y.shape[1]
-        Y = Y - Y.min()
-        Y = Y / Y.max()
-    else:
+    elif data == 'Twins_Data.csv':
         # Load data
-        data = pd.read_csv('Twin_Data.csv').values
+        data = pd.read_csv(data).values
         N = data.shape[0]
         n_features = 30
         n_treatments = 2
@@ -200,8 +205,18 @@ if __name__ == '__main__':
         Y[Y>365] = 365
         Y = 1 - Y/365.0
         t = np.random.randint(n_treatments, size=N)
+    elif data == 'Jobs_Lalonde_Data.csv':
+        data = pd.read_csv(data).values
+        X = data[:, :-2]
+        t = data[:, -2]
+        Yf = data[:, -1]
+        N = data.shape[0]
+        n_features = data.shape[1] - 2
+        n_treatments = 2
+        have_cfs = False
     T = to_categorical(t, num_classes=n_treatments, dtype='int32')
-    Yf = np.choose(t, Y.T)
+    if have_cfs:
+        Yf = np.choose(t, YT)
 
     # Train/test split
     N_train = int(N * 0.8)
@@ -211,7 +226,9 @@ if __name__ == '__main__':
     X_test = X[N_train:]
     Yf_test = Yf[N_train:]
     T_test = T[N_train:]
-    Y_test = Y[N_train:]
+    Y_test = None
+    if have_cfs:
+        Y_test = Y[N_train:]
 
     # GANITE
     params = {
@@ -228,12 +245,11 @@ if __name__ == '__main__':
         'k2':           1,
     }
     ganite = GANITE(params, hyperparams)
-    ganite.train(2000, X_train, T_train, Yf_train, X_test, T_test, Yf_test, Y_test)
+    ganite.train([2000, 1000], X_train, T_train, Yf_train, X_test, T_test, Yf_test, Y_test)
 
     # Print results
     G_pred, D_pred = ganite.predict_counterfactuals(X_test, Yf_test, T_test)
     I_pred = ganite.predict(X_test)
     results = {'G_pred': G_pred, 'I_pred': I_pred, 'Y_test': Y_test, 'D_pred': D_pred, 'T_test': T_test}
     for desc, result in  results.items():
-        print(desc)
-        print(result)
+        print(f'{desc}\n{result}')

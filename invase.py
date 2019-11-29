@@ -107,8 +107,9 @@ class INVASE:
 
 if __name__ == '__main__':
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
     np.set_printoptions(formatter={"float_kind": lambda x: f"{x:.4f}"})
-    X, t, Y = synthetic_data()
+    X, t, Y = synthetic_data(n_features=30, models=[1,2,3])
     N, n_features = X.shape
     n_treatments = Y.shape[1]
     invase = INVASE(n_features, n_treatments)
@@ -118,7 +119,7 @@ if __name__ == '__main__':
     Y_train = Y[N_train:]
     X_test = X[:N_train]
     Y_test = Y[:N_train]
-    invase.train(20000, X_train, Y_train, X_test, Y_test)
+    invase.train(10000, X_train, Y_train, X_test, Y_test)
     Y_pred, ss = invase.predict(X_test)
     X_str, Y_str, t_str, Y_pred_str, ss_str = map(np.array2string, [X, Y, t, Y_pred, ss.astype(int)])
     print('\n'.join(['X', X_str, 'Y', Y_str, 't', t_str, 'Y_pred', Y_pred_str, 'ss', ss_str]))

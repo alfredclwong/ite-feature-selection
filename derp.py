@@ -44,14 +44,14 @@ class Derp:
 if __name__ == '__main__':
     np.set_printoptions(formatter={'float_kind': lambda x: f'{x:.4f}'})
     
-    N = 10000
-    N_train = int(0.8 * N)
-    n_features = 10
-    n_treatments = 2
-    X, t, Y = synthetic_data(N=N, n_features=n_features, n_treatments=n_treatments)
+    #X, t, Y = synthetic_data(N=10000, n_features=30, models=[1, 2])
+    X, t, Y = synthetic_data('Twin_Data.csv')
+    N, n_features = X.shape
+    n_treatments = Y.shape[1]
     T = to_categorical(t, num_classes=n_treatments)
     Y_fact = np.choose(t, Y.T)
 
+    N_train = int(0.8 * N)
     X_train = X[:N_train]
     T_train = T[:N_train]
     Y_train = Y_fact[:N_train]
