@@ -20,7 +20,10 @@ class INVASE:
         self.baselines = [self.build_baseline() for t in range(self.n_treatments)]
 
         def selector_loss_fn(y_true, y_pred):
-            complexity_loss = self.gamma * K.mean(y_pred, axis=1)
+            # Extract s and y_pred/y_base/y_fact from y_true
+            # Reward regressions that are close to the baseline
+            # Penalise complexity
+            # Maximise the policy gradient
             s = y_true[:, :self.n_features]
             y_predictor = y_true[:, self.n_features]
             y_baseline = y_true[:, self.n_features + 1]
@@ -29,6 +32,7 @@ class INVASE:
             #mse_base = K.sum(K.square(y_factual - y_baseline))
             imitation_reward = -K.sum(K.square(y_predictor - y_baseline))
             policy_grad = imitation_reward * K.sum(s*K.log(y_pred+1e-8) + (1-s)*K.log(1-y_pred+1e-8), axis=1)
+            complexity_loss = self.gamma * K.mean(y_pred, axis=1)
             return K.mean(-policy_grad) + complexity_loss
 
         for selector, predictor, baseline in zip(self.selectors, self.predictors, self.baselines):
@@ -49,24 +53,33 @@ class INVASE:
         H = Concatenate()([x, s])
         H = Dense(self.n_features, activation='relu')(H)
         H = Dense(self.n_features, activation='relu')(H)
-        y = Dense(1, activation='sigmoid')(H)
+        #y = Dense(1, activation='sigmoid')(H)
+        y = Dense(1)(H)
         return Model([x, s], y)
 
     def build_baseline(self):
         X = Input((self.n_features,))
         H = Dense(self.n_features, activation='relu')(X)
         H = Dense(self.n_features, activation='relu')(H)
-        y = Dense(1, activation='sigmoid')(H)
+        #y = Dense(1, activation='sigmoid')(H)
+        y = Dense(1)(H)
         return Model(X, y)
 
     def train(self, n_iters, X, Y, X_val=None, Y_val=None, batch_size=32):
         val = X_val is not None and Y_val is not None
+        if type(n_iters) == int:
+            n_iters = [n_iters, n_iters]
         N = X.shape[0]
         sele_loss = np.zeros(self.n_treatments)
         pred_loss = np.zeros(self.n_treatments)
         base_loss = np.zeros(self.n_treatments)
         feat_prob = np.zeros((self.n_treatments, self.n_features))
-        for it in tqdm(range(n_iters)):
+        for it in tqdm(range(n_iters[0])):
+            idx = np.random.randint(N, size=batch_size)
+            for t in range(self.n_treatments):
+                y_fact = Y[idx, t].reshape(batch_size, 1)
+                base_loss[t] = self.baselines[t].train_on_batch(X[idx], y_fact)
+        for it in tqdm(range(n_iters[1])):
             idx = np.random.randint(N, size=batch_size)
             for t in range(self.n_treatments):
                 S = np.nan_to_num(self.selectors[t].predict(X[idx]))
@@ -78,9 +91,9 @@ class INVASE:
                 ys = np.concatenate([s, y_pred, y_base, y_fact], axis=1)
                 sele_loss[t] = self.selectors[t].train_on_batch(X[idx], ys)
                 pred_loss[t] = self.predictors[t].train_on_batch([x, s], y_fact)
-                base_loss[t] = self.baselines[t].train_on_batch(X[idx], y_fact)
+                #base_loss[t] = self.baselines[t].train_on_batch(X[idx], y_fact)
                 feat_prob[t,:] = np.mean(S, axis=0)
-            if (it+1) % (n_iters//10) == 0:
+            if (it+1) % (n_iters[1]//10) == 0:
                 sele_loss_str, pred_loss_str, base_loss_str = map(np.array2string, [sele_loss, pred_loss, base_loss])
                 if val:
                     Y_pred, _ = self.predict(X_val)
@@ -113,13 +126,13 @@ if __name__ == '__main__':
     N, n_features = X.shape
     n_treatments = Y.shape[1]
     invase = INVASE(n_features, n_treatments)
-    
+
     N_train = int(0.8 * N)
     X_train = X[N_train:]
     Y_train = Y[N_train:]
     X_test = X[:N_train]
     Y_test = Y[:N_train]
-    invase.train(10000, X_train, Y_train, X_test, Y_test)
+    invase.train([10000, 10000], X_train, Y_train, X_test, Y_test)
     Y_pred, ss = invase.predict(X_test)
     X_str, Y_str, t_str, Y_pred_str, ss_str = map(np.array2string, [X, Y, t, Y_pred, ss.astype(int)])
     print('\n'.join(['X', X_str, 'Y', Y_str, 't', t_str, 'Y_pred', Y_pred_str, 'ss', ss_str]))
