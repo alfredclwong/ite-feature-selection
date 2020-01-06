@@ -41,11 +41,20 @@ class INVASE:
             baseline.compile(loss='mse', optimizer='adam')
 
     def build_selectors(self):
+        # Multi-task selector network
         X = Input((self.n_features,))
         H = Dense(self.n_features, activation='relu')(X)
         H = Dense(self.n_features, activation='relu')(H)
         Ss = [Dense(self.n_features, activation='sigmoid')(H) for t in range(self.n_treatments)]
         return [Model(X, S) for S in Ss]
+
+    def build_selector(self):
+        # For split selector networks
+        X = Input((self.n_features,))
+        H = Dense(self.n_features, activation='relu')(X)
+        H = Dense(self.n_featuers, activation='relu')(H)
+        S = Dense(self.n_features, activation='sigmoid')(H)
+        return Model(X, S)
 
     def build_predictor(self):
         x = Input((self.n_features,))  # suppressed
@@ -65,7 +74,7 @@ class INVASE:
         y = Dense(1)(H)
         return Model(X, y)
 
-    def train(self, n_iters, X, Y, X_val=None, Y_val=None, batch_size=32):
+    def train(self, X, Y, n_iters, X_val=None, Y_val=None, batch_size=32):
         val = X_val is not None and Y_val is not None
         if type(n_iters) == int:
             n_iters = [n_iters, n_iters]
@@ -132,7 +141,7 @@ if __name__ == '__main__':
     Y_train = Y[N_train:]
     X_test = X[:N_train]
     Y_test = Y[:N_train]
-    invase.train([10000, 10000], X_train, Y_train, X_test, Y_test)
+    invase.train(X_train, Y_train, [10000, 10000], X_test, Y_test)
     Y_pred, ss = invase.predict(X_test)
     X_str, Y_str, t_str, Y_pred_str, ss_str = map(np.array2string, [X, Y, t, Y_pred, ss.astype(int)])
     print('\n'.join(['X', X_str, 'Y', Y_str, 't', t_str, 'Y_pred', Y_pred_str, 'ss', ss_str]))

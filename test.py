@@ -8,10 +8,11 @@ from matplotlib import pyplot as plt
 import os
 from tqdm import tqdm
 
-from invase import INVASE
-from metrics import PEHE
+from metrics import PEHE, r2
 from OLS import OLS
 from KNN import KNN
+from NN import NN
+from invase import INVASE
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress warnings
 os.environ['CUDA_VISIBLE_DEVICES'] = ''  # disable GPU
@@ -37,9 +38,10 @@ n, n_features = X.shape
 n_treatments = int(np.max(T)) + 1
 assert n_treatments == 2
 
+# TODO generate multiple beta corresponding to different feature sets for extraction
 # Construct synthetic outcomes
 Y = np.zeros((n, 2))
-setting = 'A'
+setting = 'B'
 if setting == 'A':
     # Generate linear response surfaces with non-heterogenous treatment effects
     beta = np.random.choice(5, size=n_features, p=[0.5, 0.2, 0.15, 0.1, 0.05]).astype(np.float32)
@@ -68,19 +70,22 @@ Y_train = Y[:n_train]
 X_test = X[n_train:]
 Y_test = Y[n_train:]
 
-PEHEs = {}
+PEHEs = [{}, {}]
+r2s = [{}, {}]
 methods = {
         'ols':      (OLS(n_features, n_treatments),     None            ),
         'knn':      (KNN(n_features, n_treatments, 5),  None            ),
 #        'invase':   (INVASE(n_features, n_treatments),  [10000, 10000]  ),
+#        'nn':       (NN(n_features, n_treatments),      1000            ),
 }
 
 for name, (method, n_iters) in methods.items():
     print(name)
     method.train(X_train, T_train, Yf_train, n_iters)
-    Y_pred = method.predict(X_test)
-    PEHEs[name] = PEHE(Y_pred, Y_test)
-    print(f'R^2 = {1 - np.sum(np.square(Y_pred-Y_test)) / np.sum(np.square(Y_test - np.mean(Y_test)))}')
+    Y_pred_in = method.predict(X_train)
+    Y_pred_out = method.predict(X_test)
+    PEHEs[0][name] = [PEHE(Y_train, Y_pred_in), PEHE(Y_test, Y_pred_out)]
+    r2s[0][name] = [r2(Y_train, Y_pred_in), r2(Y_test, Y_pred_out)]
 
 #'''
 # remove irrelevant features
@@ -94,30 +99,36 @@ X_test = X[n_train:]
 Y_test = Y[n_train:]
 #'''
 
+methods = {
+        'ols':      (OLS(n_features, n_treatments),     None            ),
+        'knn':      (KNN(n_features, n_treatments, 5),  None            ),
+#        'invase':   (INVASE(n_features, n_treatments),  [10000, 10000]  ),
+        'nn':       (NN(n_features, n_treatments),      1000            ),
+}
+
 for name, (method, n_iters) in methods.items():
     method.train(X_train, T_train, Yf_train, n_iters)
-    Y_pred = method.predict(X_test)
-    PEHEs[name] = PEHE(Y_pred, Y_test)
-    print(f'R^2 = {1 - np.sum(np.square(Y_pred-Y_test)) / np.sum(np.square(Y_test - np.mean(Y_test)))}')
+    Y_pred_in = method.predict(X_train)
+    Y_pred_out = method.predict(X_test)
+    PEHEs[1][name] = [PEHE(Y_train, Y_pred_in), PEHE(Y_test, Y_pred_out)]
+    r2s[1][name] = [r2(Y_train, Y_pred_in), r2(Y_test, Y_pred_out)]
+print(r2s)
+print(PEHEs)
+
+n_methods = len(methods.keys())
+x = np.arange(n_methods)
+y_out = [[PEHEs[i][name][1] for name in methods.keys()] for i in range(len(PEHEs))]
+y_in = [[PEHEs[i][name][0] for name in methods.keys()] for i in range(len(PEHEs))]
+ax = plt.subplot(121)
+ax.bar(x, y_out[0], width=0.4, align='edge')
+ax.bar(x+0.4, y_out[1], width=0.4, align='edge')
+ax = plt.subplot(122)
+ax.bar(x, y_in[0], width=0.4, align='edge')
+ax.bar(x+0.4, y_in[1], width=0.4, align='edge')
+plt.show()
 
 '''
 print('lasso')
-#'''
-
-'''
-print('nn')
-models = [Sequential() for i in range(n_treatments)]
-for i in range(n_treatments):
-    #models[i].add(Dense(16, activation='relu', input_shape=(n_features,)))
-    #models[i].add(Dense(16, activation='relu'))
-    models[i].add(Dense(1, input_shape=(n_features,)))
-    models[i].compile(optimizer='sgd', loss='mse', metrics=['mse'])
-    history = models[i].fit(X_train[T_train==i], Yf_train[T_train==i], epochs=20, validation_data=(X_test, Y_test[:, i]), verbose=0)
-    #plt.plot(history.history['mse'])
-    #plt.show()
-    print(history.history['mse'][-1])
-    Y_pred[:, i] = models[i].predict(X_test).flatten()
-PEHEs['nn'] = PEHE(Y_pred, Y_test)
 #'''
 
 '''
@@ -130,5 +141,3 @@ invase.train([5000, 20000], X_train, Y_train, X_test, Y_test)
 Y_pred, ss = invase.predict(X_test)
 PEHEs['invase'] = PEHE(Y_pred, Y_test)
 #'''
-
-print(PEHEs)

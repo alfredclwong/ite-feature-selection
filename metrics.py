@@ -8,3 +8,8 @@ def PEHE(y_true, y_pred):
     pred_treatment_effects = y_pred[:, 1] - y_pred[:, 0]
     squared_errors = np.square(true_treatment_effects - pred_treatment_effects)
     return np.sqrt(np.mean(squared_errors))
+
+def r2(y_true, y_pred):
+    rss = np.sum(np.square(y_true - y_pred))
+    tss = np.sum(np.square(y_true - np.mean(y_true)))
+    return 1 - rss/tss
