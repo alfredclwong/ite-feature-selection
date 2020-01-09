@@ -13,6 +13,7 @@ from OLS import OLS
 from KNN import KNN
 from NN import NN
 from invase import INVASE
+from specialists import Specialists
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress warnings
 os.environ['CUDA_VISIBLE_DEVICES'] = ''  # disable GPU
@@ -33,6 +34,10 @@ T = T[keep]
 control = T == 0
 treated = T == 1
 
+# Pad X with noise
+padding = 10
+X = np.concatenate([X, np.random.randn(X.shape[0], 10)], axis=1)
+
 # Extract dims
 n, n_features = X.shape
 n_treatments = int(np.max(T)) + 1
@@ -45,13 +50,16 @@ setting = 'B'
 if setting == 'A':
     # Generate linear response surfaces with non-heterogenous treatment effects
     beta = np.random.choice(5, size=n_features, p=[0.5, 0.2, 0.15, 0.1, 0.05]).astype(np.float32)
+    beta[-padding:] = 0
     Y[:, 0] = X @ beta
     Y[:, 1] = X @ beta + 4
 elif setting == 'B':
     # Generate non-linear response surfaces with heterogenous treatment effects
     beta = np.random.choice(5, size=n_features, p=[0.6, 0.1, 0.1, 0.1, 0.1]) / 10
+    beta[-padding:] = 0
     Y[:, 0] = np.exp((X + 0.5) @ beta)
     Y[:, 1] = X @ beta
+relevant_features = (beta > 0).astype(np.float32)
 
 # Add N(0, 1) noise
 Y[:, 0] = np.random.multivariate_normal(Y[:, 0], np.eye(n))
@@ -77,6 +85,7 @@ methods = {
         'knn':      (KNN(n_features, n_treatments, 5),  None            ),
 #        'invase':   (INVASE(n_features, n_treatments),  [10000, 10000]  ),
 #        'nn':       (NN(n_features, n_treatments),      1000            ),
+        'spec':     (Specialists(n_features, n_treatments, 1, relevant_features=relevant_features), 20000),
 }
 
 for name, (method, n_iters) in methods.items():
@@ -103,7 +112,8 @@ methods = {
         'ols':      (OLS(n_features, n_treatments),     None            ),
         'knn':      (KNN(n_features, n_treatments, 5),  None            ),
 #        'invase':   (INVASE(n_features, n_treatments),  [10000, 10000]  ),
-        'nn':       (NN(n_features, n_treatments),      1000            ),
+#        'nn':       (NN(n_features, n_treatments),      1000            ),
+        'spec':     (Specialists(n_features, n_treatments, 1, relevant_features=relevant_features), 20000),
 }
 
 for name, (method, n_iters) in methods.items():
@@ -125,7 +135,7 @@ ax.bar(x+0.4, y_out[1], width=0.4, align='edge')
 ax = plt.subplot(122)
 ax.bar(x, y_in[0], width=0.4, align='edge')
 ax.bar(x+0.4, y_in[1], width=0.4, align='edge')
-plt.show()
+#plt.show()
 
 '''
 print('lasso')

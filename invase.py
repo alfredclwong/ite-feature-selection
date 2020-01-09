@@ -1,5 +1,5 @@
 import os
-from keras.layers import Dense, Input, Concatenate
+from keras.layers import Dense, Input, Concatenate, Multiply
 from keras.initializers import Constant
 from keras.models import Model
 import keras.backend as K
@@ -8,123 +8,110 @@ from tqdm import tqdm
 
 from synthetic_data import synthetic_data
 
+eps = 1e-8
 
 class INVASE:
-    def __init__(self, n_features, n_treatments, gamma=0.01):
+    def __init__(self, n_features, gamma=0.05, relevant_features=None):
         self.n_features = n_features
-        self.n_treatments = n_treatments
         self.gamma = gamma
+        self.relevant_features = relevant_features
 
-        self.selectors = self.build_selectors()
-        self.predictors = [self.build_predictor() for t in range(self.n_treatments)]
-        self.baselines = [self.build_baseline() for t in range(self.n_treatments)]
+        self.selector = self.build_selector()
+        self.predictor = self.build_predictor()
+        self.baseline = self.build_baseline()
 
-        def selector_loss_fn(y_true, y_pred):
-            # Extract s and y_pred/y_base/y_fact from y_true
+        def selector_loss_fn(Ys, S_pred):
+            # Extract s and y_pred/y_base/y_fact
+            s = Ys[:, :self.n_features]
+            Y_pred = Ys[:, self.n_features]
+            Y_base = Ys[:, self.n_features + 1]
+            Y_true = Ys[:, self.n_features + 2]
+
             # Reward regressions that are close to the baseline
+            mse_pred = K.sum(K.square(Y_true - Y_pred))
+            mse_base = K.sum(K.square(Y_true - Y_base))
+            imitation_reward = mse_pred - mse_base
+
+            # policy gradient
+            loss1 = imitation_reward * K.sum(s*K.log(S_pred+eps) + (1-s)*K.log(1-S_pred+eps), axis=1)
             # Penalise complexity
-            # Maximise the policy gradient
-            s = y_true[:, :self.n_features]
-            y_predictor = y_true[:, self.n_features]
-            y_baseline = y_true[:, self.n_features + 1]
-            y_factual = y_true[:, self.n_features + 2]
-            #mse_pred = K.sum(K.square(y_factual - y_predictor))
-            #mse_base = K.sum(K.square(y_factual - y_baseline))
-            imitation_reward = -K.sum(K.square(y_predictor - y_baseline))
-            policy_grad = imitation_reward * K.sum(s*K.log(y_pred+1e-8) + (1-s)*K.log(1-y_pred+1e-8), axis=1)
-            complexity_loss = self.gamma * K.mean(y_pred, axis=1)
-            return K.mean(-policy_grad) + complexity_loss
+            complexity_loss = self.gamma * K.mean(S_pred, axis=1)
+            return K.mean(-loss1) + complexity_loss
 
-        for selector, predictor, baseline in zip(self.selectors, self.predictors, self.baselines):
-            selector.compile(loss=selector_loss_fn, optimizer='adam')
-            predictor.compile(loss='mse', optimizer='adam')
-            baseline.compile(loss='mse', optimizer='adam')
+        self.selector.compile(loss=selector_loss_fn, optimizer='adam')
+        self.predictor.compile(loss='mse', optimizer='adam')
+        self.baseline.compile(loss='mse', optimizer='adam')
 
-    def build_selectors(self):
-        # Multi-task selector network
+    def build_selector(self):
         X = Input((self.n_features,))
         H = Dense(self.n_features, activation='relu')(X)
         H = Dense(self.n_features, activation='relu')(H)
-        Ss = [Dense(self.n_features, activation='sigmoid')(H) for t in range(self.n_treatments)]
-        return [Model(X, S) for S in Ss]
-
-    def build_selector(self):
-        # For split selector networks
-        X = Input((self.n_features,))
-        H = Dense(self.n_features, activation='relu')(X)
-        H = Dense(self.n_featuers, activation='relu')(H)
         S = Dense(self.n_features, activation='sigmoid')(H)
         return Model(X, S)
 
     def build_predictor(self):
-        x = Input((self.n_features,))  # suppressed
+        X = Input((self.n_features,))  # not suppressed
         s = Input((self.n_features,))
-        H = Concatenate()([x, s])
+        H = Multiply()([X, s])
         H = Dense(self.n_features, activation='relu')(H)
         H = Dense(self.n_features, activation='relu')(H)
-        #y = Dense(1, activation='sigmoid')(H)
         y = Dense(1)(H)
-        return Model([x, s], y)
+        return Model([X, s], y)
 
     def build_baseline(self):
         X = Input((self.n_features,))
         H = Dense(self.n_features, activation='relu')(X)
         H = Dense(self.n_features, activation='relu')(H)
-        #y = Dense(1, activation='sigmoid')(H)
         y = Dense(1)(H)
         return Model(X, y)
 
     def train(self, X, Y, n_iters, X_val=None, Y_val=None, batch_size=32):
-        val = X_val is not None and Y_val is not None
+        # Check params
+        val = (X_val, Y_val) != (None, None)
         if type(n_iters) == int:
             n_iters = [n_iters, n_iters]
         N = X.shape[0]
-        sele_loss = np.zeros(self.n_treatments)
-        pred_loss = np.zeros(self.n_treatments)
-        base_loss = np.zeros(self.n_treatments)
-        feat_prob = np.zeros((self.n_treatments, self.n_features))
-        for it in tqdm(range(n_iters[0])):
-            idx = np.random.randint(N, size=batch_size)
-            for t in range(self.n_treatments):
-                y_fact = Y[idx, t].reshape(batch_size, 1)
-                base_loss[t] = self.baselines[t].train_on_batch(X[idx], y_fact)
+
         for it in tqdm(range(n_iters[1])):
             idx = np.random.randint(N, size=batch_size)
-            for t in range(self.n_treatments):
-                S = np.nan_to_num(self.selectors[t].predict(X[idx]))
-                s = np.random.binomial(1, S, size=(batch_size, self.n_features))
-                x = X[idx] * s
-                y_pred = self.predictors[t].predict([x, S])
-                y_base = self.baselines[t].predict(X[idx])
-                y_fact = Y[idx, t].reshape(batch_size, 1)
-                ys = np.concatenate([s, y_pred, y_base, y_fact], axis=1)
-                sele_loss[t] = self.selectors[t].train_on_batch(X[idx], ys)
-                pred_loss[t] = self.predictors[t].train_on_batch([x, s], y_fact)
-                #base_loss[t] = self.baselines[t].train_on_batch(X[idx], y_fact)
-                feat_prob[t,:] = np.mean(S, axis=0)
+            S = np.nan_to_num(self.selector.predict(X[idx])) # selector probs
+            s = np.random.binomial(1, S, size=(batch_size, self.n_features)) # sample from S
+
+            Y_pred = self.predictor.predict([X[idx], s])
+            pred_loss = self.predictor.train_on_batch([X[idx], s], Y[idx])
+
+            Y_base = self.baseline.predict(X[idx])
+            base_loss = self.baseline.train_on_batch(X[idx], Y[idx])
+
+            Ys = np.concatenate([s, Y_pred, Y_base, Y[idx].reshape(-1,1)], axis=1)
+            sele_loss = self.selector.train_on_batch(X[idx], Ys)
+
+            feat_prob = np.mean(S, axis=0)
             if (it+1) % (n_iters[1]//10) == 0:
-                sele_loss_str, pred_loss_str, base_loss_str = map(np.array2string, [sele_loss, pred_loss, base_loss])
                 if val:
                     Y_pred, _ = self.predict(X_val)
                     pred_mse = np.mean(np.square(Y_val - Y_pred))
-                    Y_base = np.concatenate([baseline.predict(X_val) for baseline in self.baselines], axis=1)
+                    Y_base = self.baseline.predict(X_val)
                     base_mse = np.mean(np.square(Y_val - Y_base))
                     pred_loss_str += f'\tval mse {pred_mse:.4f}'
                     base_loss_str += f'\tval mse {base_mse:.4f}'
-                print(f'#{it}:\tsele loss {sele_loss_str}\n\tpred loss {pred_loss_str}\n\tbase loss {base_loss_str}')
+                print(f'#{it}:\tsele loss {sele_loss}\n\tpred loss {pred_loss}\n\tbase loss {base_loss}')
                 print(f'features\n{np.array2string(feat_prob)}')
+                if self.relevant_features is not None:
+                    print(f'true features\n{np.array2string(self.relevant_features)}')
 
-    def predict(self, X):
+    def predict(self, X, threshold=0.5):
+        s = self.predict_features(X, threshold)
+        Y = self.predictor.predict([X, s])
+        return Y
+
+    def predict_features(self, X, threshold=0.5):
         N = X.shape[0]
-        Y = np.zeros((N, self.n_treatments))
-        ss = np.zeros((N, self.n_treatments, self.n_features))
-        for t in range(self.n_treatments):
-            S = self.selectors[t].predict(X)
-            s = np.random.binomial(1, S, size=(N, self.n_features))
-            x = X * s
-            Y[:,t] = self.predictors[t].predict([x, s]).flatten()
-            ss[:,t,:] = s
-        return Y, ss
+        S = self.selector.predict(X)
+        if threshold == None:
+            return S
+        s = S > threshold
+        return s
 
 
 if __name__ == '__main__':

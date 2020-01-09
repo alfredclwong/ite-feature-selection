@@ -12,5 +12,5 @@ class Method(ABC):
         pass
 
     @abstractmethod
-    def predict(self, X, T):
+    def predict(self, X):
         pass
