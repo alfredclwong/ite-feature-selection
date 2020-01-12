@@ -85,7 +85,7 @@ methods = {
         'knn':      (KNN(n_features, n_treatments, 5),  None            ),
 #        'invase':   (INVASE(n_features, n_treatments),  [10000, 10000]  ),
 #        'nn':       (NN(n_features, n_treatments),      1000            ),
-        'spec':     (Specialists(n_features, n_treatments, 1, relevant_features=relevant_features), 20000),
+        'spec':     (Specialists(n_features, n_treatments, 2, relevant_features=relevant_features), 10000),
 }
 
 for name, (method, n_iters) in methods.items():
@@ -113,7 +113,7 @@ methods = {
         'knn':      (KNN(n_features, n_treatments, 5),  None            ),
 #        'invase':   (INVASE(n_features, n_treatments),  [10000, 10000]  ),
 #        'nn':       (NN(n_features, n_treatments),      1000            ),
-        'spec':     (Specialists(n_features, n_treatments, 1, relevant_features=relevant_features), 20000),
+        'spec':     (Specialists(n_features, n_treatments, 2, relevant_features=relevant_features), 10000),
 }
 
 for name, (method, n_iters) in methods.items():
@@ -122,8 +122,14 @@ for name, (method, n_iters) in methods.items():
     Y_pred_out = method.predict(X_test)
     PEHEs[1][name] = [PEHE(Y_train, Y_pred_in), PEHE(Y_test, Y_pred_out)]
     r2s[1][name] = [r2(Y_train, Y_pred_in), r2(Y_test, Y_pred_out)]
-print(r2s)
-print(PEHEs)
+#print('r squared (in/out)')
+#print(r2s[0])
+print('PEHE (in/out)')
+print(PEHEs[0])
+print('with perfect features')
+#print(r2s[0])
+print('PEHE (in/out)')
+print(PEHEs[0])
 
 n_methods = len(methods.keys())
 x = np.arange(n_methods)
