@@ -106,7 +106,6 @@ class INVASE:
         return Y
 
     def predict_features(self, X, threshold=0.5):
-        N = X.shape[0]
         S = self.selector.predict(X)
         if threshold == None:
             return S
