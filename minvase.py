@@ -8,10 +8,11 @@ from invase import INVASE
 eps = 1e-8
 
 class MINVASE(INVASE):
-    def __init__(self, n_features, n_specialisms, gamma=0.05, relevant_features=None):
-        assert n_specialisms > 1
+    def __init__(self, n_features, n_specialisms, n_classes=0, gamma=0.1, relevant_features=None):
+        #assert n_specialisms > 1
         self.n_features = n_features
         self.n_specialisms = n_specialisms
+        self.n_classes = n_classes
         self.gamma = gamma
         self.relevant_features = relevant_features
 
@@ -23,15 +24,16 @@ class MINVASE(INVASE):
             # Extract s, ss and y_pred/y_base/y_fact
             n_selections = self.n_features * self.n_specialisms
             s = Ys[:, :self.n_features]
-            others = [Ys[:, i*self.n_features:(i+1)*self.n_features] for i in range(1, self.n_specialisms)]
+            if self.n_specialisms > 1:
+                others = [Ys[:, i*self.n_features:(i+1)*self.n_features] for i in range(1, self.n_specialisms)]
             Y_pred = Ys[:, n_selections]
             Y_base = Ys[:, n_selections + 1]
             Y_true = Ys[:, n_selections + 2]
 
             # Reward regressions that are close to the baseline
-            mse_pred = K.sum(K.square(Y_true - Y_pred))
-            mse_base = K.sum(K.square(Y_true - Y_base))
-            imitation_reward = mse_pred - mse_base
+            L_pred = -(K.square(Y_true - Y_pred))
+            L_base = -(K.square(Y_true - Y_base))
+            imitation_reward = L_pred - L_base
 
             # policy gradient
             loss1 = imitation_reward * K.sum(s*K.log(S_pred+eps) + (1-s)*K.log(1-S_pred+eps), axis=1)
@@ -40,7 +42,10 @@ class MINVASE(INVASE):
             complexity_loss = self.gamma * K.mean(S_pred, axis=1)
 
             # Penalise similarity
-            similarity_loss = -0.01 * K.sum([s*(K.log(s+eps)-K.log(other+eps)) for other in others])
+            if self.n_specialisms > 1:
+                similarity_loss = -0.01 * K.sum([s*(K.log(s+eps)-K.log(other+eps)) for other in others])
+            else:
+                similarity_loss = 0
 
             return K.mean(-loss1) + complexity_loss + similarity_loss
 
@@ -67,14 +72,18 @@ class MINVASE(INVASE):
             sele_loss = np.zeros(self.n_specialisms)
             for i in range(self.n_specialisms):
                 s = ss[i]
-                others = np.concatenate([ss[j] for j in range(self.n_specialisms) if j!=i], axis=1)
+                if self.n_specialisms > 1:
+                    others = np.concatenate([ss[j] for j in range(self.n_specialisms) if j!=i], axis=1)
 
                 Y_pred = self.predictors[i].predict([X[idx], s]) 
                 pred_loss[i] = self.predictors[i].train_on_batch([X[idx], s], Y[idx])
 
                 Y_base = self.baseline.predict(X[idx])
 
-                Ys = np.concatenate([s, others, Y_pred, Y_base, Y[idx].reshape(-1,1)], axis=1)
+                if self.n_specialisms > 1:
+                    Ys = np.concatenate([s, others, Y_pred, Y_base, Y[idx].reshape(-1,1)], axis=1)
+                else:
+                    Ys = np.concatenate([s, Y_pred, Y_base, Y[idx].reshape(-1,1)], axis=1)
                 sele_loss[i] = self.selectors[i].train_on_batch(X[idx], Ys) 
 
             if (it+1) % (n_iters[1]//10) == 0:
@@ -101,5 +110,5 @@ class MINVASE(INVASE):
         Ss = [selector.predict(X) for selector in self.selectors]
         if threshold == None:
             return Ss
-        ss = S > threshold
-        return s
+        ss = [S > threshold for S in Ss]
+        return ss

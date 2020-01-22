@@ -11,9 +11,10 @@ from synthetic_data import synthetic_data
 eps = 1e-8
 
 class INVASE:
-    def __init__(self, n_features, gamma=0.05, relevant_features=None):
+    def __init__(self, n_features, n_classes=0, lam=0.05, relevant_features=None):
         self.n_features = n_features
-        self.gamma = gamma
+        self.n_classes = n_classes  # 0 = regression, 2+ = classification
+        self.lam = lam
         self.relevant_features = relevant_features
 
         self.selector = self.build_selector()
@@ -23,29 +24,38 @@ class INVASE:
         def selector_loss_fn(Ys, S_pred):
             # Extract s and y_pred/y_base/y_fact
             s = Ys[:, :self.n_features]
-            Y_pred = Ys[:, self.n_features]
-            Y_base = Ys[:, self.n_features + 1]
-            Y_true = Ys[:, self.n_features + 2]
+            if self.n_classes:
+                Y_pred = Ys[:, self.n_features : self.n_features+self.n_classes]
+                Y_base = Ys[:, self.n_features+self.n_classes : self.n_features+self.n_classes*2]
+                Y_true = Ys[: ,self.n_features+self.n_classes*2 : ]
 
-            # Reward regressions that are close to the baseline
-            mse_pred = K.sum(K.square(Y_true - Y_pred))
-            mse_base = K.sum(K.square(Y_true - Y_base))
-            imitation_reward = mse_pred - mse_base
+                L_pred = -K.sum(Y_pred * K.log(Y_true+eps), axis=1)
+                L_base = -K.sum(Y_base * K.log(Y_true+eps), axis=1)
+            else:
+                Y_pred = Ys[:, self.n_features]
+                Y_base = Ys[:, self.n_features + 1]
+                Y_true = Ys[:, self.n_features + 2]
+
+                # Reward regressions that are close to the baseline
+                L_pred = -(K.square(Y_true - Y_pred))
+                L_base = -(K.square(Y_true - Y_base))
+            imitation_reward = L_pred - L_base
 
             # policy gradient
             loss1 = imitation_reward * K.sum(s*K.log(S_pred+eps) + (1-s)*K.log(1-S_pred+eps), axis=1)
             # Penalise complexity
-            complexity_loss = self.gamma * K.mean(S_pred, axis=1)
+            complexity_loss = self.lam * K.mean(S_pred, axis=1)
             return K.mean(-loss1) + complexity_loss
 
         self.selector.compile(loss=selector_loss_fn, optimizer='adam')
-        self.predictor.compile(loss='mse', optimizer='adam')
-        self.baseline.compile(loss='mse', optimizer='adam')
+        loss = 'categorical_crossentropy' if self.n_classes else 'mse'
+        self.predictor.compile(loss=loss, optimizer='adam')
+        self.baseline.compile(loss=loss, optimizer='adam')
 
     def build_selector(self):
         X = Input((self.n_features,))
-        H = Dense(self.n_features, activation='relu')(X)
-        H = Dense(self.n_features, activation='relu')(H)
+        H = Dense(self.n_features*2, activation='relu')(X)
+        H = Dense(self.n_features*2, activation='relu')(H)
         S = Dense(self.n_features, activation='sigmoid')(H)
         return Model(X, S)
 
@@ -53,21 +63,21 @@ class INVASE:
         X = Input((self.n_features,))  # not suppressed
         s = Input((self.n_features,))
         H = Multiply()([X, s])
-        H = Dense(self.n_features, activation='relu')(H)
-        H = Dense(self.n_features, activation='relu')(H)
-        y = Dense(1)(H)
+        H = Dense(self.n_features*2, activation='relu')(H)
+        H = Dense(self.n_features*2, activation='relu')(H)
+        y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
         return Model([X, s], y)
 
     def build_baseline(self):
         X = Input((self.n_features,))
-        H = Dense(self.n_features, activation='relu')(X)
-        H = Dense(self.n_features, activation='relu')(H)
-        y = Dense(1)(H)
+        H = Dense(self.n_features*2, activation='relu')(X)
+        H = Dense(self.n_features*2, activation='relu')(H)
+        y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
         return Model(X, y)
 
     def train(self, X, Y, n_iters, X_val=None, Y_val=None, batch_size=32):
         # Check params
-        val = (X_val, Y_val) != (None, None)
+        val = (X_val, Y_val) is not (None, None)
         if type(n_iters) == int:
             n_iters = [n_iters, n_iters]
         N = X.shape[0]
@@ -83,19 +93,18 @@ class INVASE:
             Y_base = self.baseline.predict(X[idx])
             base_loss = self.baseline.train_on_batch(X[idx], Y[idx])
 
-            Ys = np.concatenate([s, Y_pred, Y_base, Y[idx].reshape(-1,1)], axis=1)
+            Ys = np.concatenate([s, Y_pred, Y_base, Y[idx].reshape(batch_size,-1)], axis=1)
             sele_loss = self.selector.train_on_batch(X[idx], Ys)
 
             feat_prob = np.mean(S, axis=0)
             if (it+1) % (n_iters[1]//10) == 0:
+                print(f'#{it}:\tsele loss {sele_loss}\n\tpred loss {pred_loss}\n\tbase loss {base_loss}')
                 if val:
-                    Y_pred, _ = self.predict(X_val)
+                    Y_pred = self.predict(X_val)
                     pred_mse = np.mean(np.square(Y_val - Y_pred))
                     Y_base = self.baseline.predict(X_val)
                     base_mse = np.mean(np.square(Y_val - Y_base))
-                    pred_loss_str += f'\tval mse {pred_mse:.4f}'
-                    base_loss_str += f'\tval mse {base_mse:.4f}'
-                print(f'#{it}:\tsele loss {sele_loss}\n\tpred loss {pred_loss}\n\tbase loss {base_loss}')
+                    print(f'\tpred mse (val) {pred_mse:.4f}\tbase mse (val) {base_mse:.4f}')
                 print(f'features\n{np.array2string(feat_prob)}')
                 if self.relevant_features is not None:
                     print(f'true features\n{np.array2string(self.relevant_features)}')
@@ -117,10 +126,10 @@ if __name__ == '__main__':
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
     np.set_printoptions(formatter={"float_kind": lambda x: f"{x:.4f}"})
-    X, t, Y = synthetic_data(n_features=30, models=[1,2,3])
+    X, t, Y = synthetic_data(n_features=30, models=[1])
     N, n_features = X.shape
     n_treatments = Y.shape[1]
-    invase = INVASE(n_features, n_treatments)
+    invase = INVASE(n_features)
 
     N_train = int(0.8 * N)
     X_train = X[N_train:]
@@ -128,6 +137,7 @@ if __name__ == '__main__':
     X_test = X[:N_train]
     Y_test = Y[:N_train]
     invase.train(X_train, Y_train, [10000, 10000], X_test, Y_test)
-    Y_pred, ss = invase.predict(X_test)
+    Y_pred = invase.predict(X_test)
+    ss = invase.predict_features(X_test)
     X_str, Y_str, t_str, Y_pred_str, ss_str = map(np.array2string, [X, Y, t, Y_pred, ss.astype(int)])
     print('\n'.join(['X', X_str, 'Y', Y_str, 't', t_str, 'Y_pred', Y_pred_str, 'ss', ss_str]))
