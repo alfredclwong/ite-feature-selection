@@ -77,7 +77,7 @@ class INVASE:
 
     def train(self, X, Y, n_iters, X_val=None, Y_val=None, batch_size=32):
         # Check params
-        val = (X_val, Y_val) is not (None, None)
+        val = X_val is not None and Y_val is not None
         if type(n_iters) == int:
             n_iters = [n_iters, n_iters]
         N = X.shape[0]
@@ -130,6 +130,7 @@ if __name__ == '__main__':
     N, n_features = X.shape
     n_treatments = Y.shape[1]
     invase = INVASE(n_features)
+    Y += np.random.randn(N, 1) * 0.1
 
     N_train = int(0.8 * N)
     X_train = X[N_train:]

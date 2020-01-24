@@ -14,6 +14,7 @@ from KNN import KNN
 from NN import NN
 from invase import INVASE
 from specialists import Specialists
+from ganite import GANITE
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress warnings
 os.environ['CUDA_VISIBLE_DEVICES'] = ''  # disable GPU
@@ -22,7 +23,7 @@ np.set_printoptions(linewidth=160)
 # Read X and T, standardise X
 data = pd.read_csv('ihdp.csv').values
 X = data[:, 2:-3]
-X = (X - np.mean(X)) / np.std(X)
+X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
 T = data[:, 1].astype(np.int)
 
 # Introduce selection bias
@@ -35,7 +36,7 @@ control = T == 0
 treated = T == 1
 
 # Pad X with noise
-padding = 100
+padding = 0
 if padding:
     X = np.concatenate([X, np.random.randn(X.shape[0], padding)], axis=1)
 
@@ -47,7 +48,7 @@ assert n_treatments == 2
 # TODO generate multiple beta corresponding to different feature sets for extraction
 # Construct synthetic outcomes
 Y = np.zeros((n, 2))
-for setting in ['B']:
+for setting in ['A', 'B']:
     if setting == 'A':
         # Generate linear response surfaces with non-heterogenous treatment effects
         beta = np.random.choice(5, size=n_features, p=[0.5, 0.2, 0.15, 0.1, 0.05]).astype(np.float32)
@@ -89,7 +90,8 @@ for setting in ['B']:
             'knn':      (KNN(n_features, n_treatments, 5),  None            ),
     #        'invase':   (INVASE(n_features, n_treatments),  [10000, 10000]  ),
             #'nn':       (NN(n_features, n_treatments),      1000            ),
-            'spec':     (Specialists(n_features, n_treatments, n_specialisms, relevant_features=relevant_features), 5000),
+            #'spec':     (Specialists(n_features, n_treatments, n_specialisms, relevant_features=relevant_features), 5000),
+    #        'ganite':   (GANITE(n_features, n_treatments),  [5000, 2000]    ),
     }
 
     for name, (method, n_iters) in methods.items():
@@ -124,7 +126,8 @@ for setting in ['B']:
                 'knn':      (KNN(n_features, n_treatments, 5),  None            ),
     #            'invase':   (INVASE(n_features, n_treatments),  [10000, 10000]  ),
                 #'nn':       (NN(n_features, n_treatments),      1000            ),
-                'spec':     (Specialists(n_features, n_treatments, n_specialisms, relevant_features=relevant_features), 5000),
+                #'spec':     (Specialists(n_features, n_treatments, n_specialisms, relevant_features=relevant_features), 5000),
+    #        'ganite':   (GANITE(n_features, n_treatments),  [5000, 2000]    ),
         }
 
         for name, (method, n_iters) in methods.items():
@@ -140,6 +143,7 @@ for setting in ['B']:
         #print('r squared (in/out)')
         #print(r2s[1])
 
+        '''
         n_methods = len(methods.keys())
         x = np.arange(n_methods)
         y_out = [[PEHEs[i][name][1] for name in methods.keys()] for i in range(len(PEHEs))]
@@ -151,6 +155,7 @@ for setting in ['B']:
         ax.bar(x, y_in[0], width=0.4, align='edge')
         ax.bar(x+0.4, y_in[1], width=0.4, align='edge')
         #plt.show()
+        '''
 
     '''
     print('lasso')

@@ -8,14 +8,23 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from Method import Method
 from synthetic_data import synthetic_data
 from metrics import PEHE
 
+hyperparams = {
+    'h_layers':     2,
+    'h_dim':        16,
+    'alpha':        1,
+    'beta':         0.5,
+    'batch_size':   128,
+    'k1':           10,
+    'k2':           1,
+}
 
-class GANITE():
-    def __init__(self, params, hyperparams, optimizer='adam'):
-        self.n_features = params['n_features']
-        self.n_treatments = params['n_treatments']
+class GANITE(Method):
+    def __init__(self, n_features, n_treatments, optimizer='adam'):
+        super().__init__(n_features, n_treatments)
         self.h_layers = hyperparams['h_layers']
         self.h_dim = hyperparams['h_dim']
         self.batch_size = hyperparams['batch_size']
@@ -25,7 +34,9 @@ class GANITE():
         self.k2 = hyperparams['k2']
         self.gan, self.generator, self.discriminator, self.inference = self.build_GANITE(optimizer)
 
-    def train(self, n_epochs, X_train, T_train, Yf_train, X_val, T_val, Yf_val, Y_val):
+    def train(self, X_train, T_train, Yf_train, n_epochs, X_val=None, T_val=None, Yf_val=None, Y_val=None):
+        val = all([_val is not None for _val in [X_val, T_val, Yf_val]])
+        T_train = to_categorical(T_train)
         def get_batch():
             N_train = X_train.shape[0]
             idx = np.random.randint(N_train, size=self.batch_size)
@@ -50,14 +61,15 @@ class GANITE():
                 g_loss = self.gan.train_on_batch([X, Yf, T, Z], T)
 
             if epoch % (n_epochs[0]//5) == 0:
-                Z_val = self.sample_Z(X_val.shape[0])
-                Y_pred_val = self.generator.predict([X_val, Yf_val, T_val, Z_val])
-                g_mse_val = 0
-                g_pehe_val = 0
-                if Y_val is not None:
+                print(f'Epoch: {epoch}\nD loss: {d_loss:.4f}\tD acc: {d_acc:.4f}\nG loss: {g_loss:.4f}')
+                if val:
+                    Z_val = self.sample_Z(X_val.shape[0])
+                    Y_pred_val = self.generator.predict([X_val, Yf_val, T_val, Z_val])
+                    g_mse_val = 0
+                    g_pehe_val = 0
                     g_mse_val = np.mean(np.square(Y_pred_val - Y_val))
                     g_pehe_val = PEHE(Y_val, Y_pred_val)
-                print(f'Epoch: {epoch}\nD loss: {d_loss:.4f}\tD acc: {d_acc:.4f}\nG loss: {g_loss:.4f}\tMSE (val): {g_mse_val:.4f}\tPEHE (val): {g_pehe_val:.4f}')
+                    print(f'MSE (val): {g_mse_val:.4f}\tPEHE (val): {g_pehe_val:.4f}')
 
         # Train I
         for epoch in tqdm(range(n_epochs[1])):
@@ -67,10 +79,12 @@ class GANITE():
             i_loss = self.inference.train_on_batch(X, Y_bar)
 
             if epoch % (n_epochs[1]//5) == 0:
-                Y_pred_val = self.predict(X_val)
-                i_mse_val = np.mean(np.square(Y_pred_val - Y_val))
-                i_pehe_val = PEHE(Y_val, Y_pred_val)
-                print(f'Epoch: {epoch}\nI loss (train): {i_loss:.4f}\nI MSE (val): {i_mse_val:.4f}\tI PEHE (val): {i_pehe_val:.4f}')
+                print(f'Epoch: {epoch}\nI loss (train): {i_loss:.4f}')
+                if val:
+                    Y_pred_val = self.predict(X_val)
+                    i_mse_val = np.mean(np.square(Y_pred_val - Y_val))
+                    i_pehe_val = PEHE(Y_val, Y_pred_val)
+                    print(f'I MSE (val): {i_mse_val:.4f}\tI PEHE (val): {i_pehe_val:.4f}')
 
     def predict_counterfactuals(self, X, Yf, T):
         Z = self.sample_Z(X.shape[0])
@@ -125,10 +139,10 @@ class GANITE():
             return loss
         inference.compile(loss=losses.mean_squared_error, optimizer=optimizer)
 
-        generator.summary()
-        discriminator.summary()
-        gan.summary()
-        inference.summary()
+        #generator.summary()
+        #discriminator.summary()
+        #gan.summary()
+        #inference.summary()
         return gan, generator, discriminator, inference
 
     def build_generator(self, activation='relu'):
@@ -231,20 +245,7 @@ if __name__ == '__main__':
         Y_test = Y[N_train:]
 
     # GANITE
-    params = {
-        'n_features':   n_features,
-        'n_treatments': n_treatments,
-    }
-    hyperparams = {
-        'h_layers':     2,
-        'h_dim':        16,
-        'alpha':        1,
-        'beta':         0.5,
-        'batch_size':   128,
-        'k1':           10,
-        'k2':           1,
-    }
-    ganite = GANITE(params, hyperparams)
+    ganite = GANITE(n_features, n_treatments)
     ganite.train([2000, 1000], X_train, T_train, Yf_train, X_test, T_test, Yf_test, Y_test)
 
     # Print results
