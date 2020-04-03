@@ -7,23 +7,26 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 import os
 from tqdm import tqdm
+from scipy.linalg import null_space
 
 from metrics import PEHE, r2
-from OLS import OLS
-from KNN import KNN
-from NN import NN
-from invase import INVASE
-from specialists import Specialists
-from ganite import GANITE
+from methods.OLS import OLS
+from methods.KNN import KNN
+from methods.NN import NN
+from methods.invase import INVASE
+from methods.specialists import Specialists
+from methods.ganite import GANITE
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress warnings
+#os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress warnings
 os.environ['CUDA_VISIBLE_DEVICES'] = ''  # disable GPU
 np.set_printoptions(linewidth=160)
 
 # Read X and T, standardise X
-data = pd.read_csv('ihdp.csv').values
+data = pd.read_csv('data/ihdp.csv').values
 X = data[:, 2:-3]
 X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
+print(np.mean(X, axis=0))
+print(np.std(X, axis=0))
 T = data[:, 1].astype(np.int)
 
 # Introduce selection bias
@@ -34,6 +37,8 @@ X = X[keep]
 T = T[keep]
 control = T == 0
 treated = T == 1
+
+print(null_space(X))
 
 # Pad X with noise
 padding = 0
@@ -69,7 +74,7 @@ for setting in ['A', 'B']:
     Y[:, 0] = np.random.multivariate_normal(Y[:, 0], np.eye(n))
     Y[:, 1] = np.random.multivariate_normal(Y[:, 1], np.eye(n))
     print(f'Setting {setting}')
-    print(beta)
+    print(np.array2string(np.concatenate([[0], beta]), formatter={'float': lambda x: "{0:0.1f}".format(x)}))
     np.set_printoptions(formatter={'float_kind': lambda x: f'{x:.1f}'})
 
     # test:train split
@@ -88,10 +93,9 @@ for setting in ['A', 'B']:
     methods = {
             'ols':      (OLS(n_features, n_treatments),     None            ),
             'knn':      (KNN(n_features, n_treatments, 5),  None            ),
-    #        'invase':   (INVASE(n_features, n_treatments),  [10000, 10000]  ),
             #'nn':       (NN(n_features, n_treatments),      1000            ),
             #'spec':     (Specialists(n_features, n_treatments, n_specialisms, relevant_features=relevant_features), 5000),
-    #        'ganite':   (GANITE(n_features, n_treatments),  [5000, 2000]    ),
+            'ganite':   (GANITE(n_features, n_treatments),  [5000, 2000]    ),
     }
 
     for name, (method, n_iters) in methods.items():
@@ -106,11 +110,13 @@ for setting in ['A', 'B']:
     #print('r squared (in/out)')
     #print(r2s[0])
 
-    perfect = True
+    perfect = False
 
     if perfect:
         #'''
         # remove irrelevant features
+        print('with perfect features')
+        print(np.concatenate([[0], beta[beta!=0]]))
         X = X[:, beta!=0]
         n_features = X.shape[1]
         X_train = X[:n_train]
@@ -124,10 +130,9 @@ for setting in ['A', 'B']:
         methods = {
                 'ols':      (OLS(n_features, n_treatments),     None            ),
                 'knn':      (KNN(n_features, n_treatments, 5),  None            ),
-    #            'invase':   (INVASE(n_features, n_treatments),  [10000, 10000]  ),
                 #'nn':       (NN(n_features, n_treatments),      1000            ),
                 #'spec':     (Specialists(n_features, n_treatments, n_specialisms, relevant_features=relevant_features), 5000),
-    #        'ganite':   (GANITE(n_features, n_treatments),  [5000, 2000]    ),
+                'ganite':   (GANITE(n_features, n_treatments),  [5000, 2000]    ),
         }
 
         for name, (method, n_iters) in methods.items():
@@ -137,7 +142,6 @@ for setting in ['A', 'B']:
             PEHEs[1][name] = [PEHE(Y_train, Y_pred_in), PEHE(Y_test, Y_pred_out)]
             r2s[1][name] = [r2(Y_train, Y_pred_in), r2(Y_test, Y_pred_out)]
 
-        print('with perfect features')
         print('PEHE (in/out)')
         print(PEHEs[1])
         #print('r squared (in/out)')

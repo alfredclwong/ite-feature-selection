@@ -1,4 +1,4 @@
-from Method import Method
+from methods.Method import Method
 import numpy as np
 
 

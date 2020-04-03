@@ -6,9 +6,9 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from functools import reduce
 
-from Method import Method
+from methods.Method import Method
 #from invase import INVASE
-from minvase import MINVASE
+from methods.minvase import MINVASE
 
 use_predictors = False
 

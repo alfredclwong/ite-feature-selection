@@ -3,7 +3,7 @@ import keras.backend as K
 from tqdm import tqdm
 import os
 
-from invase import INVASE
+from methods.invase import INVASE
 from synthetic_data import synthetic_data
 
 

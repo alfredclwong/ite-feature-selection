@@ -3,15 +3,16 @@ from keras.layers import Dense, Input, Concatenate, Multiply
 from keras.initializers import Constant
 from keras.models import Model
 import keras.backend as K
+from keras.utils import to_categorical
 import numpy as np
 from tqdm import tqdm
 
-from synthetic_data import synthetic_data
+#from synthetic_data import synthetic_data
 
 eps = 1e-8
 
 class INVASE:
-    def __init__(self, n_features, n_classes=0, lam=0.05, relevant_features=None):
+    def __init__(self, n_features, n_classes=0, lam=0.05, relevant_features=None, verbose=True):
         self.n_features = n_features
         self.n_classes = n_classes  # 0 = regression, 2+ = classification
         self.lam = lam
@@ -62,7 +63,7 @@ class INVASE:
     def build_predictor(self):
         X = Input((self.n_features,))  # not suppressed
         s = Input((self.n_features,))
-        H = Multiply()([X, s])
+        H = Multiply()([X, s])         # suppressed
         H = Dense(self.n_features*2, activation='relu')(H)
         H = Dense(self.n_features*2, activation='relu')(H)
         y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
@@ -75,11 +76,13 @@ class INVASE:
         y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
         return Model(X, y)
 
-    def train(self, X, Y, n_iters, X_val=None, Y_val=None, batch_size=32):
+    def train(self, X, Y, n_iters, X_val=None, Y_val=None, batch_size=32, verbose=True):
         # Check params
         val = X_val is not None and Y_val is not None
         if type(n_iters) == int:
             n_iters = [n_iters, n_iters]
+        if self.n_classes and (len(Y.shape) == 1 or Y.shape[2] == 1):
+            Y = to_categorical(Y, num_classes=self.n_classes)
         N = X.shape[0]
 
         for it in tqdm(range(n_iters[1])):
@@ -97,7 +100,7 @@ class INVASE:
             sele_loss = self.selector.train_on_batch(X[idx], Ys)
 
             feat_prob = np.mean(S, axis=0)
-            if (it+1) % (n_iters[1]//10) == 0:
+            if verbose and (it+1) % (n_iters[1]//10) == 0:
                 print(f'#{it}:\tsele loss {sele_loss}\n\tpred loss {pred_loss}\n\tbase loss {base_loss}')
                 if val:
                     Y_pred = self.predict(X_val)
@@ -109,9 +112,12 @@ class INVASE:
                 if self.relevant_features is not None:
                     print(f'true features\n{np.array2string(self.relevant_features)}')
 
-    def predict(self, X, threshold=0.5):
-        s = self.predict_features(X, threshold)
-        Y = self.predictor.predict([X, s])
+    def predict(self, X, threshold=0.5, use_baseline=False):
+        if use_baseline:
+            Y = self.baseline.predict(X)
+        else:
+            s = self.predict_features(X, threshold)
+            Y = self.predictor.predict([X, s])
         return Y
 
     def predict_features(self, X, threshold=0.5):
