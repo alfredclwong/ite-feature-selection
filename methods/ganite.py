@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from methods.Method import Method
+from methods.method import Method
 from synthetic_data import synthetic_data
 from metrics import PEHE
 

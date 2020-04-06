@@ -1,4 +1,4 @@
-from methods.Method import Method
+from methods.method import Method
 import numpy as np
 from keras.models import Sequential
 from keras.layers import Dense

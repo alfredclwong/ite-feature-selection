@@ -10,11 +10,10 @@ from tqdm import tqdm
 from scipy.linalg import null_space
 
 from metrics import PEHE, r2
-from methods.OLS import OLS
-from methods.KNN import KNN
-from methods.NN import NN
+from methods.ols import OLS
+from methods.knn import KNN
+from methods.nn import NN
 from methods.invase import INVASE
-from methods.specialists import Specialists
 from methods.ganite import GANITE
 
 #os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress warnings
@@ -87,14 +86,12 @@ for setting in ['A', 'B']:
     X_test = X[n_train:]
     Y_test = Y[n_train:]
 
-    n_specialisms = 1
     PEHEs = [{}, {}]
     r2s = [{}, {}]
     methods = {
             'ols':      (OLS(n_features, n_treatments),     None            ),
             'knn':      (KNN(n_features, n_treatments, 5),  None            ),
             #'nn':       (NN(n_features, n_treatments),      1000            ),
-            #'spec':     (Specialists(n_features, n_treatments, n_specialisms, relevant_features=relevant_features), 5000),
             'ganite':   (GANITE(n_features, n_treatments),  [5000, 2000]    ),
     }
 
@@ -131,7 +128,6 @@ for setting in ['A', 'B']:
                 'ols':      (OLS(n_features, n_treatments),     None            ),
                 'knn':      (KNN(n_features, n_treatments, 5),  None            ),
                 #'nn':       (NN(n_features, n_treatments),      1000            ),
-                #'spec':     (Specialists(n_features, n_treatments, n_specialisms, relevant_features=relevant_features), 5000),
                 'ganite':   (GANITE(n_features, n_treatments),  [5000, 2000]    ),
         }
 
