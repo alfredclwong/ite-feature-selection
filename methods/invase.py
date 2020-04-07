@@ -79,13 +79,17 @@ class INVASE:
     def train(self, X, Y, n_iters, X_val=None, Y_val=None, batch_size=32, verbose=True):
         # Check params
         val = X_val is not None and Y_val is not None
-        if type(n_iters) == int:
-            n_iters = [n_iters, n_iters]
         if self.n_classes and (len(Y.shape) == 1 or Y.shape[2] == 1):
             Y = to_categorical(Y, num_classes=self.n_classes)
         N = X.shape[0]
 
-        for it in tqdm(range(n_iters[1])):
+        metric = 'accuracy' if self.n_classes else 'mse'
+        history = {
+            'loss':             np.zeros((n_iters, 3)),  # pred, base, sele
+            f'{metric}':        np.zeros((n_iters, 2)),  # pred, base
+            f'{metric}-val':    np.zeros((n_iters, 2)),  # pred, base
+        }
+        for it in tqdm(range(n_iters)):
             idx = np.random.randint(N, size=batch_size)
             S = np.nan_to_num(self.selector.predict(X[idx])) # selector probs
             s = np.random.binomial(1, S, size=(batch_size, self.n_features)) # sample from S
@@ -99,8 +103,10 @@ class INVASE:
             Ys = np.concatenate([s, Y_pred, Y_base, Y[idx].reshape(batch_size,-1)], axis=1)
             sele_loss = self.selector.train_on_batch(X[idx], Ys)
 
+            history['loss'][it] = [pred_loss, base_loss, sele_loss]
+
             feat_prob = np.mean(S, axis=0)
-            if verbose and (it+1) % (n_iters[1]//10) == 0:
+            if verbose and (it+1) % (n_iters//10) == 0:
                 print(f'#{it}:\tsele loss {sele_loss}\n\tpred loss {pred_loss}\n\tbase loss {base_loss}')
                 if val:
                     Y_pred = self.predict(X_val)
@@ -111,6 +117,8 @@ class INVASE:
                 print(f'features\n{np.array2string(feat_prob)}')
                 if self.relevant_features is not None:
                     print(f'true features\n{np.array2string(self.relevant_features)}')
+
+        return history
 
     def predict(self, X, threshold=0.5, use_baseline=False):
         if use_baseline:
