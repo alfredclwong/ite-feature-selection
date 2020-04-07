@@ -1,6 +1,3 @@
-[submodule "IBM-Causal-Inference-Benchmarking-Framework"]
-	path = IBM-Causal-Inference-Benchmarking-Framework
-	url = https://github.com/IBM-HRL-MLHLS/IBM-Causal-Inference-Benchmarking-Framework.git
 [submodule "methods/cfrnet"]
 	path = methods/cfrnet
 	url = https://github.com/clinicalml/cfrnet.git
