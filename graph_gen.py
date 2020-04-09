@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 from graphviz import Digraph
 from methods.invase import INVASE
 
@@ -51,7 +53,8 @@ X = X[:, 1:]; E = E[:, 1:]  # get rid of bias columns
 
 import pandas as pd
 # Read X and T, standardise X
-data = pd.read_csv('data/ihdp.csv').values
+df = pd.read_csv('data/ihdp.csv')
+data = df.values; headers = df.columns[2:-3]
 X = data[:, 2:-3]
 X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
 T = data[:, 1].astype(np.int)
@@ -76,7 +79,11 @@ invase_matrix = np.zeros((n_features, n_features))
 for i in range(n_features):
     invase = INVASE(n_features=n_features-1, lam=0.05)
     other_features = [j for j in range(n_features) if i!=j]
-    invase.train(X[:, other_features], X[:, i], 3000, verbose=False)
+    history = invase.train(X[:, other_features], X[:, i], 8000, verbose=True)
+    S = invase.predict_features(X[:, other_features], threshold=None)
+    sns.heatmap(S[:100].T, center=0.5, vmin=0, vmax=1, cmap='gray', square=True, cbar=False, yticklabels=headers[other_features])
+    plt.title(headers[i])
+    plt.show()
     invase_matrix[i, other_features] = np.mean(invase.predict_features(X[:, other_features]), axis=0)
 print(corr_matrix)
 print(invase_matrix)

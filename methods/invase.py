@@ -6,6 +6,7 @@ import keras.backend as K
 from keras.utils import to_categorical
 import numpy as np
 from tqdm import tqdm
+from sklearn.utils import class_weight
 
 #from synthetic_data import synthetic_data
 
@@ -76,45 +77,77 @@ class INVASE:
         y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
         return Model(X, y)
 
-    def train(self, X, Y, n_iters, X_val=None, Y_val=None, batch_size=32, verbose=True):
+    def train(self, X, Y, n_iters, X_test=None, Y_test=None, batch_size=32, verbose=True):
+        weights = class_weight.compute_class_weight('balanced', np.unique(Y), Y)
+
         # Check params
-        val = X_val is not None and Y_val is not None
+        test = X_test is not None and Y_test is not None
         if self.n_classes and (len(Y.shape) == 1 or Y.shape[2] == 1):
             Y = to_categorical(Y, num_classes=self.n_classes)
+            if test:
+                Y_test = to_categorical(Y_test, num_classes=self.n_classes)
         N = X.shape[0]
 
-        metric = 'accuracy' if self.n_classes else 'mse'
+        metric_str = 'acc' if self.n_classes else 'mse'
         history = {
-            'loss':             np.zeros((n_iters, 3)),  # pred, base, sele
-            f'{metric}':        np.zeros((n_iters, 2)),  # pred, base
-            f'{metric}-val':    np.zeros((n_iters, 2)),  # pred, base
+            'loss':                 np.zeros((n_iters, 3)),  # pred, base, sele
+            f'{metric_str}':        np.zeros((n_iters, 2)),  # pred, base
+            f'{metric_str}-test':   np.zeros((n_iters, 2)),  # pred, base
+            'S':                    np.zeros((n_iters, batch_size, self.n_features)),
         }
         for it in tqdm(range(n_iters)):
             idx = np.random.randint(N, size=batch_size)
             S = np.nan_to_num(self.selector.predict(X[idx])) # selector probs
             s = np.random.binomial(1, S, size=(batch_size, self.n_features)) # sample from S
 
-            Y_pred = self.predictor.predict([X[idx], s])
-            pred_loss = self.predictor.train_on_batch([X[idx], s], Y[idx])
-
             Y_base = self.baseline.predict(X[idx])
-            base_loss = self.baseline.train_on_batch(X[idx], Y[idx])
+            #if it % 20 == 0:
+            base_loss = self.baseline.train_on_batch(X[idx], Y[idx], class_weight=weights)
+
+            Y_pred = self.predictor.predict([X[idx], s])
+            pred_loss = self.predictor.train_on_batch([X[idx], s], Y[idx], class_weight=weights)
+            #pred_loss = self.predictor.train_on_batch([X[idx], s], Y_base)
 
             Ys = np.concatenate([s, Y_pred, Y_base, Y[idx].reshape(batch_size,-1)], axis=1)
             sele_loss = self.selector.train_on_batch(X[idx], Ys)
 
             history['loss'][it] = [pred_loss, base_loss, sele_loss]
+            history['S'][it] = S
+            if self.n_classes:
+                Y_pred = Y_pred > 0.5
+                Y_base = Y_base > 0.5
+                metric = np.array([
+                    np.sum(Y_pred[:,0]==Y[idx,0]),
+                    np.sum(Y_base[:,0]==Y[idx,0])]) / batch_size
+                history[metric_str][it] = metric
+                if test:
+                    Y_pred = self.predict(X_test) > 0.5
+                    Y_base = self.baseline.predict(X_test) > 0.5
+                    metric_test = np.array([
+                        np.sum(Y_pred[:,0]==Y_test[:,0]),
+                        np.sum(Y_base[:,0]==Y_test[:,0])]) / X_test.shape[0]
+                    history[f'{metric_str}-test'][it] = metric_test
+            else:
+                metric = np.array([
+                    np.mean(np.square(Y_pred-Y)),
+                    np.mean(np.square(Y_base-Y))])
+                history[metric_str][it] = metric
+                if test:
+                    Y_pred = self.predict(X_test)
+                    Y_base = self.baseline.predict(X_test)
+                    metric_test = np.array([
+                        np.mean(np.square(Y_pred-Y_test)),
+                        np.mean(np.square(Y_base-Y_test))])
+                    history[f'{metric_str}-test'][it] = metric_test
 
-            feat_prob = np.mean(S, axis=0)
+            feat_prob_mean = np.mean(S, axis=0)
             if verbose and (it+1) % (n_iters//10) == 0:
-                print(f'#{it}:\tsele loss {sele_loss}\n\tpred loss {pred_loss}\n\tbase loss {base_loss}')
-                if val:
-                    Y_pred = self.predict(X_val)
-                    pred_mse = np.mean(np.square(Y_val - Y_pred))
-                    Y_base = self.baseline.predict(X_val)
-                    base_mse = np.mean(np.square(Y_val - Y_base))
-                    print(f'\tpred mse (val) {pred_mse:.4f}\tbase mse (val) {base_mse:.4f}')
-                print(f'features\n{np.array2string(feat_prob)}')
+                print(f'#{it}:\tsele loss\t{sele_loss:.4f}\n\tpred loss\t{pred_loss:.4f}\n\tbase loss\t{base_loss:.4f}')
+                print(f'\tpred {metric_str}\t{metric[0]:.4f}\tbase {metric_str}\t{metric[1]:.4f}')
+                if test:
+                    print(f'\tpred {metric_str} (test)\t{metric_test[0]:.4f}\tbase {metric_str} (test)\t{metric_test[1]:.4f}')
+                feat_prob_str = np.array2string(feat_prob_mean, formatter={'float_kind': '{0:.2f}'.format})
+                print(f'features\n{feat_prob_str}')
                 if self.relevant_features is not None:
                     print(f'true features\n{np.array2string(self.relevant_features)}')
 
