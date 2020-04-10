@@ -86,9 +86,12 @@ class GANITE(Method):
                     i_pehe_val = PEHE(Y_val, Y_pred_val)
                     print(f'I MSE (val): {i_mse_val:.4f}\tI PEHE (val): {i_pehe_val:.4f}')
 
-    def predict_counterfactuals(self, X, T, Yf):
+    def predict_counterfactuals(self, X, Yf, T, Y_bar=False):
+        T = to_categorical(T)
         Z = self.sample_Z(X.shape[0])
         Y_pred = self.generator.predict([X, Yf, T, Z])
+        if Y_bar:
+            Y_pred = (T.T * Yf).T + (1.-T) * Y_pred
         T_pred = self.gan.predict([X, Yf, T, Z])
         return Y_pred, T_pred
 
@@ -156,7 +159,7 @@ class GANITE(Method):
         #hidden = Concatenate(name='Inputs')([X, Yf, T])
         for h_layer in range(self.h_layers):
             hidden = Dense(self.h_dim, activation=activation, name=f'Hidden_{h_layer+1}')(hidden)
-        Y_pred = Concatenate(name='Y_pred')([Dense(1, activation='sigmoid', name=f'Head_{t+1}')(hidden) for t in range(self.n_treatments)])
+        Y_pred = Concatenate(name='Y_pred')([Dense(1, name=f'Head_{t+1}')(hidden) for t in range(self.n_treatments)])
         return Model([X, Yf, T, Z], Y_pred, name='Generator')
 
     def build_discriminator(self, activation='relu'):
@@ -181,7 +184,7 @@ class GANITE(Method):
         hidden = X
         for h_layer in range(self.h_layers):
             hidden = Dense(self.h_dim, activation=activation, name=f'Hidden_{h_layer+1}')(hidden)
-        Y_pred = Concatenate(name='Y_pred')([Dense(1, activation='sigmoid', name=f'Head_{t+1}')(hidden) for t in range(self.n_treatments)])
+        Y_pred = Concatenate(name='Y_pred')([Dense(1, name=f'Head_{t+1}')(hidden) for t in range(self.n_treatments)])
         return Model(X, Y_pred, name='Inference')
 
     def sample_Z(self, N):
@@ -249,7 +252,7 @@ if __name__ == '__main__':
     ganite.train([2000, 1000], X_train, T_train, Yf_train, X_test, T_test, Yf_test, Y_test)
 
     # Print results
-    G_pred, D_pred = ganite.predict_counterfactuals(X_test, T_test, Yf_test)
+    G_pred, D_pred = ganite.predict_counterfactuals(X_test, Yf_test, T_test)
     I_pred = ganite.predict(X_test)
     results = {'G_pred': G_pred, 'I_pred': I_pred, 'Y_test': Y_test, 'D_pred': D_pred, 'T_test': T_test}
     for desc, result in  results.items():
