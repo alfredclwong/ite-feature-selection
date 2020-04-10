@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from methods.invase import INVASE
+from utils.utils import process
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress warnings
 os.environ['CUDA_VISIBLE_DEVICES'] = ''   # disable gpu
@@ -33,10 +34,6 @@ n_treatments = int(np.max(T)) + 1
 
 n_train = int(n * 0.8)
 n_test = n - n_train
-
-def process(x, n=3):
-    cs = np.cumsum(x, axis=0)
-    return (cs[n:]-cs[:-n])/n
 
 # try a few random train/test splits
 for i in range(1):
