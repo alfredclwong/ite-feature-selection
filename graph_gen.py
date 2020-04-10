@@ -49,8 +49,9 @@ for i in range(n_features):
         continue
     X[:, i+1] = (X @ E[i].T) % 2
 X = X[:, 1:]; E = E[:, 1:]  # get rid of bias columns
-'''
+#'''
 
+#'''
 import pandas as pd
 # Read X and T, standardise X
 df = pd.read_csv('data/ihdp.csv')
@@ -77,9 +78,12 @@ print(X)
 corr_matrix = np.corrcoef(X, rowvar=False)
 invase_matrix = np.zeros((n_features, n_features))
 for i in range(n_features):
-    invase = INVASE(n_features=n_features-1, lam=0.05)
+    n_classes = len(set(X[:, i]))
+    if n_classes > 3:
+        n_classes = 0
+    invase = INVASE(n_features=n_features-1, n_classes=n_classes, lam=0.05)
     other_features = [j for j in range(n_features) if i!=j]
-    history = invase.train(X[:, other_features], X[:, i], 8000, verbose=True)
+    history = invase.train(X[:, other_features], X[:, i], 8000, verbose=False)
     S = invase.predict_features(X[:, other_features], threshold=None)
     sns.heatmap(S[:100].T, center=0.5, vmin=0, vmax=1, cmap='gray', square=True, cbar=False, yticklabels=headers[other_features])
     plt.title(headers[i])
@@ -87,4 +91,4 @@ for i in range(n_features):
     invase_matrix[i, other_features] = np.mean(invase.predict_features(X[:, other_features]), axis=0)
 print(corr_matrix)
 print(invase_matrix)
-#print(E)
+#'''

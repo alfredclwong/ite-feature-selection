@@ -13,7 +13,7 @@ from sklearn.utils import class_weight
 eps = 1e-8
 
 class INVASE:
-    def __init__(self, n_features, n_classes=0, lam=0.05, relevant_features=None, verbose=True):
+    def __init__(self, n_features, n_classes, lam=0.05, relevant_features=None, verbose=True):
         self.n_features = n_features
         self.n_classes = n_classes  # 0 = regression, 2+ = classification
         self.lam = lam
