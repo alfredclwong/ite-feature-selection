@@ -7,6 +7,5 @@ def process(x, n=3):
     return (cs[n:]-cs[:-n])/n
 
 def param_search(params):
-    lens = [len(l) for l in params.values()]
-    for idxs in product(*([i for i in range(l)] for l in lens)):
+    for idxs in product(*(range(len(l)) for l in params.values())):
         yield {k: v[idxs[i]] for i, (k,v) in enumerate(params.items())}
