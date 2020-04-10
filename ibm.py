@@ -2,12 +2,22 @@ from causalbenchmark.utils import combine_covariates_with_observed
 from causalbenchmark.evaluate import evaluate
 
 from methods.method import Method
+from methods.ols import OLS
+from methods.knn import KNN
+from methods.nn import NN
+from methods.invase import INVASE
+from methods.ganite import GANITE
 
 import os
 import pandas as pd
 from tqdm import tqdm
 from multiprocessing import Pool
 import numpy as np
+
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress warnings
+os.environ['CUDA_VISIBLE_DEVICES'] = ''   # disable gpu
+np.set_printoptions(linewidth=160)
 
 N_PROCESSES = 4
 COUNTERFACTUAL_FILE_SUFFIX = "_cf"
@@ -43,22 +53,43 @@ def predict(file_dataset):
     file, dataset = file_dataset
     ufid = file_to_ufid(file)
 
+    X = dataset.values[:, :-2]
+    #X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
+    Z = dataset.values[:, -2]
+    Yf = dataset.values[:, -1]
+    n_treatments = len(set(Z))
+    n, n_features = X.shape
+    n_train = int(0.8 * n)
+    X_train, Z_train, Yf_train = map(lambda arr: arr[:n_train], [X, Z, Yf])
+    X_test, Z_test, Yf_test = map(lambda arr: arr[n_train:], [X, Z, Yf])
+
     '''
-    XZ = dataset.values[:,:-1]
+    # linear regression
+    XZ = dataset.values[:, 10:-1]
     q, r = np.linalg.qr(XZ)
+    #print(q)
+    #print(r)
     features = np.nonzero(np.diag(r)>1e-10)[0]
     Yf = dataset.values[:,-1]
     XZ = np.concatenate([XZ, np.ones((XZ.shape[0],1))], axis=1)
     XZ = XZ[:, features]
     beta = np.linalg.inv(XZ.T @ XZ) @ XZ.T @ Yf
-    '''
+    predictions = np.zeros((XZ.shape[0], 2))
+    for i in range(2):
+        XZ[:,-1] = i
+        predictions[:,i] = XZ @ beta
+    #'''
 
-    #predictions = np.zeros((XZ.shape[0], 2))
-    #for i in range(2):
-    #    XZ[:,-1] = i
-    #    predictions[:,i] = XZ @ beta
-    #predictions = pd.DataFrame(predictions, index=dataset.index, columns=[HEADER_Y0, HEADER_Y1])
-    predictions = pd.read_csv(os.path.join(paths["counterfactuals"], f"{ufid}_cf.csv"))
+    #'''
+    ganite = GANITE(n_features, n_treatments)
+    ganite.train(X_train, Z_train, Yf_train, [10000, 5000], verbose=False)
+    #predictions = ganite.predict(X)
+    predictions, = ganite.predict_counterfactuals(X, Z, Yf)
+    #'''
+
+    predictions = pd.DataFrame(predictions, index=dataset.index, columns=[HEADER_Y0, HEADER_Y1])
+
+    answers = pd.read_csv(os.path.join(paths["counterfactuals"], f"{ufid}_cf.csv"))
 
     predictions_file = os.path.join(paths["predictions"], f"{ufid}.csv")
     predictions.to_csv(predictions_file)
@@ -67,9 +98,9 @@ def predict(file_dataset):
 pool = Pool(processes=N_PROCESSES)
 with tqdm(total=nrows) as pbar:
     for ufid, size in pool.imap_unordered(predict, combine_covariates_with_observed(paths["covariates"], paths["factuals"])):
-        pbar.update(size)
         pbar.set_description(ufid)
+        pbar.update(size)
 
 print("evaluating...")
-evaluation = evaluate(paths["predictions"], paths["counterfactuals"], is_individual_prediction=1) 
+evaluation = evaluate(paths["predictions"], paths["counterfactuals"], is_individual_prediction=True)
 print(evaluation)
