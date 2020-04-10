@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from methods.method import Method
 from synthetic_data import synthetic_data
-from metrics import PEHE
+from utils.metrics import PEHE
 
 hyperparams = {
     'h_layers':     2,
@@ -34,7 +34,7 @@ class GANITE(Method):
         self.k2 = hyperparams['k2']
         self.gan, self.generator, self.discriminator, self.inference = self.build_GANITE(optimizer)
 
-    def train(self, X_train, T_train, Yf_train, n_epochs, X_val=None, T_val=None, Yf_val=None, Y_val=None):
+    def train(self, X_train, T_train, Yf_train, n_epochs, X_val=None, T_val=None, Yf_val=None, Y_val=None, verbose=True):
         val = all([_val is not None for _val in [X_val, T_val, Yf_val]])
         T_train = to_categorical(T_train)
         def get_batch():
@@ -60,7 +60,7 @@ class GANITE(Method):
                 X, Yf, T, Z = get_batch()
                 g_loss = self.gan.train_on_batch([X, Yf, T, Z], T)
 
-            if epoch % (n_epochs[0]//5) == 0:
+            if epoch % (n_epochs[0]//5) == 0 and verbose:
                 print(f'Epoch: {epoch}\nD loss: {d_loss:.4f}\tD acc: {d_acc:.4f}\nG loss: {g_loss:.4f}')
                 if val:
                     Z_val = self.sample_Z(X_val.shape[0])
@@ -78,7 +78,7 @@ class GANITE(Method):
             Y_bar = (T.T * Yf).T + (1.-T) * Y_pred
             i_loss = self.inference.train_on_batch(X, Y_bar)
 
-            if epoch % (n_epochs[1]//5) == 0:
+            if epoch % (n_epochs[1]//5) == 0 and verbose:
                 print(f'Epoch: {epoch}\nI loss (train): {i_loss:.4f}')
                 if val:
                     Y_pred_val = self.predict(X_val)
@@ -86,7 +86,7 @@ class GANITE(Method):
                     i_pehe_val = PEHE(Y_val, Y_pred_val)
                     print(f'I MSE (val): {i_mse_val:.4f}\tI PEHE (val): {i_pehe_val:.4f}')
 
-    def predict_counterfactuals(self, X, Yf, T):
+    def predict_counterfactuals(self, X, T, Yf):
         Z = self.sample_Z(X.shape[0])
         Y_pred = self.generator.predict([X, Yf, T, Z])
         T_pred = self.gan.predict([X, Yf, T, Z])
@@ -249,7 +249,7 @@ if __name__ == '__main__':
     ganite.train([2000, 1000], X_train, T_train, Yf_train, X_test, T_test, Yf_test, Y_test)
 
     # Print results
-    G_pred, D_pred = ganite.predict_counterfactuals(X_test, Yf_test, T_test)
+    G_pred, D_pred = ganite.predict_counterfactuals(X_test, T_test, Yf_test)
     I_pred = ganite.predict(X_test)
     results = {'G_pred': G_pred, 'I_pred': I_pred, 'Y_test': Y_test, 'D_pred': D_pred, 'T_test': T_test}
     for desc, result in  results.items():
