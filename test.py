@@ -7,9 +7,8 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 import os
 from tqdm import tqdm
-from scipy.linalg import null_space
 
-from metrics import PEHE, r2
+from utils.metrics import PEHE, r2
 from methods.ols import OLS
 from methods.knn import KNN
 from methods.nn import NN
@@ -24,8 +23,6 @@ np.set_printoptions(linewidth=160)
 data = pd.read_csv('data/ihdp.csv').values
 X = data[:, 2:-3]
 X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
-print(np.mean(X, axis=0))
-print(np.std(X, axis=0))
 T = data[:, 1].astype(np.int)
 
 # Introduce selection bias
@@ -36,8 +33,6 @@ X = X[keep]
 T = T[keep]
 control = T == 0
 treated = T == 1
-
-print(null_space(X))
 
 # Pad X with noise
 padding = 0
