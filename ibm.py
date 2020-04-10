@@ -7,6 +7,7 @@ from methods.knn import KNN
 from methods.nn import NN
 from methods.invase import INVASE
 from methods.ganite import GANITE
+from utils.utils import param_search
 
 import os
 import pandas as pd
@@ -15,11 +16,15 @@ from multiprocessing import Pool
 import numpy as np
 
 
+def warn(*args, **kwargs):
+    pass
+import warnings
+warnings.warn = warn
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress warnings
 os.environ['CUDA_VISIBLE_DEVICES'] = ''   # disable gpu
 np.set_printoptions(linewidth=160)
 
-N_PROCESSES = 4
+N_PROCESSES = 1
 COUNTERFACTUAL_FILE_SUFFIX = "_cf"
 FILENAME_EXTENSION = ".csv"
 HEADER_Y0, HEADER_Y1 = ["y0", "y1"]
@@ -63,6 +68,8 @@ def predict(file_dataset):
     X_train, Z_train, Yf_train = map(lambda arr: arr[:n_train], [X, Z, Yf])
     X_test, Z_test, Yf_test = map(lambda arr: arr[n_train:], [X, Z, Yf])
 
+    print(f'{ufid}: {n} samples')
+
     '''
     # linear regression
     XZ = dataset.values[:, 10:-1]
@@ -81,10 +88,24 @@ def predict(file_dataset):
     #'''
 
     #'''
-    ganite = GANITE(n_features, n_treatments)
-    ganite.train(X_train, Z_train, Yf_train, [10000, 5000], verbose=False)
-    #predictions = ganite.predict(X)
-    predictions, = ganite.predict_counterfactuals(X, Z, Yf)
+    hyperparams = {
+        'h_layers':     [2],
+        'h_dim':        [16, 32],
+        'alpha':        [0.5],
+        'beta':         [0.5],
+        'batch_size':   [64],
+        'k1':           [1, 10, 100],
+        'k2':           [10],
+    }
+    best_loss = 99999
+    for p in param_search(hyperparams):
+        print(p)
+        ganite = GANITE(n_features, n_treatments, hyperparams=p)
+        g_loss = ganite.train(X_train, Z_train, Yf_train, [1000, 5000], X_test, Z_test, Yf_test, verbose=True)
+        #predictions = ganite.predict(X)
+        if g_loss < best_loss:
+            best_loss = g_loss
+            predictions, _ = ganite.predict_counterfactuals(X, Yf, Z, Y_bar=True)
     #'''
 
     predictions = pd.DataFrame(predictions, index=dataset.index, columns=[HEADER_Y0, HEADER_Y1])

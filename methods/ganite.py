@@ -23,7 +23,7 @@ hyperparams = {
 }
 
 class GANITE(Method):
-    def __init__(self, n_features, n_treatments, optimizer='adam'):
+    def __init__(self, n_features, n_treatments, hyperparams=hyperparams, optimizer='adam'):
         super().__init__(n_features, n_treatments)
         self.h_layers = hyperparams['h_layers']
         self.h_dim = hyperparams['h_dim']
@@ -35,8 +35,8 @@ class GANITE(Method):
         self.gan, self.generator, self.discriminator, self.inference = self.build_GANITE(optimizer)
 
     def train(self, X_train, T_train, Yf_train, n_epochs, X_val=None, T_val=None, Yf_val=None, Y_val=None, verbose=True):
-        val = all([_val is not None for _val in [X_val, T_val, Yf_val]])
-        T_train = to_categorical(T_train)
+        val = all([_val is not None for _val in [X_val, T_val, Yf_val, Y_val]])
+        T_train, T_val = map(to_categorical, [T_train, T_val])
         def get_batch():
             N_train = X_train.shape[0]
             idx = np.random.randint(N_train, size=self.batch_size)
@@ -85,6 +85,8 @@ class GANITE(Method):
                     i_mse_val = np.mean(np.square(Y_pred_val - Y_val))
                     i_pehe_val = PEHE(Y_val, Y_pred_val)
                     print(f'I MSE (val): {i_mse_val:.4f}\tI PEHE (val): {i_pehe_val:.4f}')
+
+        return g_loss
 
     def predict_counterfactuals(self, X, Yf, T, Y_bar=False):
         T = to_categorical(T)
