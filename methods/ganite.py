@@ -47,12 +47,15 @@ class GANITE(Method):
             return X, Yf, T, Z
 
         # Train GAN (G and D)
-        for epoch in tqdm(range(n_epochs[0])):
+        for epoch in tqdm(range(1, 1+n_epochs[0])):
             # Train D over k1 batches per epoch
             for i in range(self.k1):
                 X, Yf, T, Z = get_batch()
                 Y_pred = self.generator.predict([X, Yf, T, Z])
                 Y_bar = (T.T * Yf).T + (1.-T) * Y_pred
+                d_loss, d_acc = self.discriminator.evaluate([X, Y_bar], T, verbose=0)
+                if d_acc > 0.9:
+                    break
                 d_loss, d_acc = self.discriminator.train_on_batch([X, Y_bar], T)
 
             # Train G over k2 batches per epoch
@@ -61,7 +64,11 @@ class GANITE(Method):
                 g_loss = self.gan.train_on_batch([X, Yf, T, Z], T)
 
             if epoch % (n_epochs[0]//5) == 0 and verbose:
-                print(f'Epoch: {epoch}\nD loss: {d_loss:.4f}\tD acc: {d_acc:.4f}\nG loss: {g_loss:.4f}')
+                Z_train = self.sample_Z(X_train.shape[0])
+                Y_pred_train = self.generator.predict([X_train, Yf_train, T_train, Z_train])
+                Y_bar_train = (T_train.T * Yf_train).T + (1.-T_train) * Y_pred_train
+                d_loss_train, d_acc_train = self.discriminator.evaluate([X_train, Y_bar_train], T_train, verbose=0)
+                g_loss_train = self.gan.evaluate([X_train, Yf_train, T_train, Z_train], T_train, verbose=0)
                 if val:
                     Z_val = self.sample_Z(X_val.shape[0])
                     Y_pred_val = self.generator.predict([X_val, Yf_val, T_val, Z_val])
@@ -69,10 +76,14 @@ class GANITE(Method):
                     g_pehe_val = 0
                     g_mse_val = np.mean(np.square(Y_pred_val - Y_val))
                     g_pehe_val = PEHE(Y_val, Y_pred_val)
-                    print(f'MSE (val): {g_mse_val:.4f}\tPEHE (val): {g_pehe_val:.4f}')
+                    g_enormse = PEHE(Y_val, Y_pred_val, norm=True)
+                print(f'Epoch: {epoch}\n[batch]\tD loss: {d_loss:.4f}\tD acc: {d_acc:.4f}\tG loss: {g_loss:.4f}\t({g_loss+self.alpha*d_loss:.4f})')
+                print(f'[train]\tD loss: {d_loss_train:.4f}\tD acc: {d_acc_train:.4f}\tG loss: {g_loss_train:.4f}\t({g_loss_train+self.alpha*d_loss_train:.4f})')
+                if val:
+                    print(f'[val]\tMSE: {g_mse_val:.4f}\t\tPEHE: {g_pehe_val:.4f}\t\tENoRMSE: {g_enormse:.4f}')
 
         # Train I
-        for epoch in tqdm(range(n_epochs[1])):
+        for epoch in tqdm(range(1, 1+n_epochs[1])):
             X, Yf, T, Z = get_batch()
             Y_pred = self.generator.predict([X, Yf, T, Z])
             Y_bar = (T.T * Yf).T + (1.-T) * Y_pred
