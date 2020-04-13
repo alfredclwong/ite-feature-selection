@@ -29,6 +29,12 @@ COUNTERFACTUAL_FILE_SUFFIX = "_cf"
 FILENAME_EXTENSION = ".csv"
 HEADER_Y0, HEADER_Y1 = ["y0", "y1"]
 
+paths_50k = {   
+    "covariates":       "data/LBIDD-50k/x.csv",
+    "factuals":         "data/LBIDD-50k/scaling/",
+    "counterfactuals":  "data/LBIDD-50k/scaling/",
+    "predictions":      "results/",
+}
 paths_small = {
     "covariates":       "data/LBIDD-small/x.csv",
     "factuals":         "data/LBIDD-small/scaling/",
@@ -41,7 +47,7 @@ paths_big = {
     "counterfactuals":  "data/LBIDD/scaling/counterfactuals/",
     "predictions":      "results/",
 }
-paths = paths_small
+paths = paths_50k
 try:
     os.mkdir(paths["predictions"])
 except:
@@ -57,16 +63,22 @@ nrows = sum([sum(1 for row in open(os.path.join(paths["factuals"], file)))-1 for
 def predict(file_dataset):
     file, dataset = file_dataset
     ufid = file_to_ufid(file)
+    answers = pd.read_csv(os.path.join(paths["counterfactuals"], f"{ufid}_cf.csv"), index_col='sample_id')
+    dataset, answers = map(lambda df: df.sort_index(), [dataset, answers])
 
     X = dataset.values[:, :-2]
     #X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
     Z = dataset.values[:, -2]
     Yf = dataset.values[:, -1]
+    #mean = np.mean(Yf)
+    #max_abs = np.max(np.abs(Yf-mean))
+    #Yf = (Yf - mean) / max_abs
+    Y = answers.values
     n_treatments = len(set(Z))
     n, n_features = X.shape
     n_train = int(0.8 * n)
     X_train, Z_train, Yf_train = map(lambda arr: arr[:n_train], [X, Z, Yf])
-    X_test, Z_test, Yf_test = map(lambda arr: arr[n_train:], [X, Z, Yf])
+    X_test, Z_test, Yf_test, Y_test = map(lambda arr: arr[n_train:], [X, Z, Yf, Y])
 
     print(f'{ufid}: {n} samples')
 
@@ -90,37 +102,38 @@ def predict(file_dataset):
     #'''
     hyperparams = {
         'h_layers':     [2],
-        'h_dim':        [16, 32],
-        'alpha':        [0.5],
+        'h_dim':        [16],
+        'alpha':        [1],
         'beta':         [0.5],
         'batch_size':   [64],
-        'k1':           [1, 10, 100],
+        'k1':           [1, 10],
         'k2':           [10],
     }
     best_loss = 99999
     for p in param_search(hyperparams):
         print(p)
         ganite = GANITE(n_features, n_treatments, hyperparams=p)
-        g_loss = ganite.train(X_train, Z_train, Yf_train, [1000, 5000], X_test, Z_test, Yf_test, verbose=True)
+        g_loss = ganite.train(X_train, Z_train, Yf_train, [20000, 0], X_test, Z_test, Yf_test, Y_test, verbose=True)
         #predictions = ganite.predict(X)
         if g_loss < best_loss:
             best_loss = g_loss
             predictions, _ = ganite.predict_counterfactuals(X, Yf, Z, Y_bar=True)
+            #predictions = predictions * max_abs + mean
     #'''
 
     predictions = pd.DataFrame(predictions, index=dataset.index, columns=[HEADER_Y0, HEADER_Y1])
-
-    answers = pd.read_csv(os.path.join(paths["counterfactuals"], f"{ufid}_cf.csv"))
 
     predictions_file = os.path.join(paths["predictions"], f"{ufid}.csv")
     predictions.to_csv(predictions_file)
     return ufid, len(dataset.index)
 
+#'''
 pool = Pool(processes=N_PROCESSES)
 with tqdm(total=nrows) as pbar:
     for ufid, size in pool.imap_unordered(predict, combine_covariates_with_observed(paths["covariates"], paths["factuals"])):
         pbar.set_description(ufid)
         pbar.update(size)
+#'''
 
 print("evaluating...")
 evaluation = evaluate(paths["predictions"], paths["counterfactuals"], is_individual_prediction=True)
