@@ -1,4 +1,5 @@
 import numpy as np
+from sklearn.metrics import confusion_matrix
 
 
 def shape_check(y_true, y_pred):
@@ -23,3 +24,19 @@ def r2(y_true, y_pred):
     rss = np.sum(np.square(y_true - y_pred))
     tss = np.sum(np.square(y_true - np.mean(y_true)))
     return 1 - rss/tss
+
+def tpr_fdr(y_true, y_pred):
+    tn, fp, fn, tp = confusion_matrix(y_true.flatten(), y_pred.flatten()).ravel()
+    tpr = tp / (tp + fn)
+    fdr = fp / (tp + fp)
+    return tpr, fdr
+
+def roc(y_true, y_pred):
+    thresholds = np.arange(0, 1+1e-5, 1e-2)
+    roc = np.zeros((thresholds.size, 2))
+    for i in range(thresholds.size):
+        tn, fp, fn, tp = confusion_matrix(y_true.flatten(), y_pred.flatten()>=thresholds[i]).ravel()
+        tpr = tp / (tp + fn)
+        fpr = fp / (tn + fp)
+        roc[i] = [fpr, tpr]
+    return np.unique(roc, axis=0)
