@@ -54,7 +54,22 @@ def get_T(X, n_treatments=2):
 
 
 def get_model(i):
-    if i == 1:
+    if i == 'A':
+        def model(X):
+            n, n_features = X.shape
+            beta = np.random.choice(5, size=n_features, p=[.5, .2, .15, .1, .05]).astype(np.float32)
+            Y = np.zeros((n, 2))
+            Y[:, 0] = X @ beta
+            Y[:, 1] = X @ beta + 4
+            return Y, beta
+    elif i == 'B':
+        def model(X):
+            n, n_features = X.shape
+            beta = np.random.choice(5, size=n_features, p=[.6, .1, .1, .1, .1]) / 10
+            Y[:, 0] = np.exp((X + .5) @ beta)
+            Y[:, 1] = X @ beta
+            return Y, beta
+    elif i == 1:
         # XOR
         def model(X):
             Y = X[:, 0] * X[:, 1]

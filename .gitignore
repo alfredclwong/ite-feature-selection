@@ -1,6 +1,5 @@
-data/scaling
-data/x.csv
-
+data/LBIDD/
+results/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

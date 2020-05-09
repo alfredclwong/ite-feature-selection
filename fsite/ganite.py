@@ -8,11 +8,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from methods.method import Method
-from synthetic_data import synthetic_data
-from utils.metrics import PEHE
-
-hyperparams = {
+default_hyperparams = {
     'h_layers':     2,
     'h_dim':        16,
     'alpha':        1,
@@ -22,8 +18,8 @@ hyperparams = {
     'k2':           1,
 }
 
-class GANITE(Method):
-    def __init__(self, n_features, n_treatments, hyperparams=hyperparams, optimizer='adam'):
+class GANITE():
+    def __init__(self, n_features, n_treatments, hyperparams=default_hyperparams, optimizer='adam'):
         super().__init__(n_features, n_treatments)
         self.h_layers = hyperparams['h_layers']
         self.h_dim = hyperparams['h_dim']
@@ -209,64 +205,3 @@ class GANITE(Method):
         weights['discriminator'] = self.discriminator.get_weights()
         weights['inference'] = self.inference.get_weights()
         return weights
-
-
-if __name__ == '__main__':
-    np.set_printoptions(formatter={'float_kind': lambda x: f'{x:.4f}'})
-    
-    data = 'Jobs_Lalonde_Data.csv'
-    have_cfs = True
-    if data is None:
-        X, t, Y = synthetic_data(n_features=30, models=[1,2])
-        N, n_features = X.shape
-        n_treatments = Y.shape[1]
-    elif data == 'Twins_Data.csv':
-        # Load data
-        data = pd.read_csv(data).values
-        N = data.shape[0]
-        n_features = 30
-        n_treatments = 2
-
-        # Preprocess
-        X = data[:, :n_features]
-        X = X - X.min(axis=0)
-        X = X / X.max(axis=0)
-        Y = data[:, n_features:]
-        Y[Y>365] = 365
-        Y = 1 - Y/365.0
-        t = np.random.randint(n_treatments, size=N)
-    elif data == 'Jobs_Lalonde_Data.csv':
-        data = pd.read_csv(data).values
-        X = data[:, :-2]
-        t = data[:, -2]
-        Yf = data[:, -1]
-        N = data.shape[0]
-        n_features = data.shape[1] - 2
-        n_treatments = 2
-        have_cfs = False
-    T = to_categorical(t, num_classes=n_treatments, dtype='int32')
-    if have_cfs:
-        Yf = np.choose(t, YT)
-
-    # Train/test split
-    N_train = int(N * 0.8)
-    X_train = X[:N_train]
-    Yf_train = Yf[:N_train]
-    T_train = T[:N_train]
-    X_test = X[N_train:]
-    Yf_test = Yf[N_train:]
-    T_test = T[N_train:]
-    Y_test = None
-    if have_cfs:
-        Y_test = Y[N_train:]
-
-    # GANITE
-    ganite = GANITE(n_features, n_treatments)
-    ganite.train([2000, 1000], X_train, T_train, Yf_train, X_test, T_test, Yf_test, Y_test)
-
-    # Print results
-    G_pred, D_pred = ganite.predict_counterfactuals(X_test, Yf_test, T_test)
-    I_pred = ganite.predict(X_test)
-    results = {'G_pred': G_pred, 'I_pred': I_pred, 'Y_test': Y_test, 'D_pred': D_pred, 'T_test': T_test}
-    for desc, result in  results.items():
-        print(f'{desc}\n{result}')
