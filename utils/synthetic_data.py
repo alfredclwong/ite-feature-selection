@@ -83,8 +83,9 @@ def get_model(i):
             S[:, 2:6] = 1
             return Y, S
     elif i == 3:
+        # X_7 can dominate if the coeffecient is too high (100 in L2X, 10 in INVASE, 5 => 100%)
         def model(X):
-            Y = -np.sin(2 * X[:, 6]) + 2 * np.abs(X[:, 7]) + X[:, 8] + np.exp(-X[:, 9])
+            Y = - 5 * np.sin(2 * X[:, 6]) + 2 * np.abs(X[:, 7]) + X[:, 8] + np.exp(-X[:, 9])
             S = np.zeros(X.shape)
             S[:, 6:10] = 1
             return Y, S
