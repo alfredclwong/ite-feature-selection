@@ -1,173 +1,202 @@
-import os
-from keras.layers import Dense, Input, Concatenate, Multiply
-from keras.initializers import Constant
+from keras.layers import Dense, Input, Multiply, Concatenate
 from keras.models import Model
-import keras.backend as K
 from keras.utils import to_categorical
+import keras.backend as K
 import numpy as np
 from tqdm import tqdm
-from sklearn.utils import class_weight
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 
 eps = 1e-8
 
-default_params = {
-    'h_dim_pred':   lambda x: 2*x,
-    'h_dim_base':   lambda x: 2*x,
-    'h_layers':     2,
+default_hyperparams = {
+    'h_layers_pred':    2,
+    'h_dim_pred':       lambda x: 2*x,  # noqa 272
+    'h_layers_base':    2,
+    'h_dim_base':       lambda x: 2*x,  # noqa 272
+    'h_layers_sel':     1,
+    'h_dim_sel':        lambda x: 2*x,  # noqa 272
+    'lam':              0.1,
+    'optimizer':        'adam'
 }
 
+
 class Invase:
-    def __init__(self, n_features, n_classes, lam=0.05, relevant_features=None, verbose=True):
+    def __init__(self, n_features, n_classes, hyperparams=default_hyperparams, verbose=True):
         self.n_features = n_features
         self.n_classes = n_classes  # 0 = regression, 2+ = classification
-        self.lam = lam
-        self.relevant_features = relevant_features
-        self.s_h_layers = 2
-        self.s_h_dim = 2 * self.n_features
-        self.h_layers = 2
-        self.h_dim = 2* self.n_features
+        pred_base_loss = 'categorical_crossentropy' if self.n_classes else 'mse'
+        optimizer = hyperparams['optimizer']
 
-        self.selector = self.build_selector()
-        self.predictor = self.build_predictor()
-        self.baseline = self.build_baseline()
+        # Build and compile baseline net
+        h_layers_base = hyperparams['h_layers_base']
+        h_dim_base = hyperparams['h_dim_base'](self.n_features)
+        self.baseline = self.__build_baseline(h_layers_base, h_dim_base)
+        self.baseline.compile(loss=pred_base_loss, optimizer=optimizer)
 
-        def selector_loss_fn(Ys, S_pred):
-            # Extract s and y_pred/y_base/y_fact
-            s = Ys[:, :self.n_features]
+        # Build and compile predictor net
+        h_layers_pred = hyperparams['h_layers_pred']
+        h_dim_pred = hyperparams['h_dim_pred'](self.n_features)
+        self.predictor = self.__build_predictor(h_layers_pred, h_dim_pred)
+        self.predictor.compile(loss=pred_base_loss, optimizer=optimizer)
+
+        # Build and compile selector net, with custom loss function
+        h_layers_sel = hyperparams['h_layers_sel']
+        h_dim_sel = hyperparams['h_dim_sel'](self.n_features)
+        self.selector = self.__build_selector(h_layers_sel, h_dim_sel)
+        lam = hyperparams['lam']
+
+        def selector_loss_fn(sY, S):
+            # Extract s (sampled selection vector) and Y_pred, Y_base, Y_true (factual) from sY
+            # Have S (probability vector from selector net)
+            s = sY[:, :self.n_features]
             if self.n_classes:
-                Y_pred = Ys[:, self.n_features : self.n_features+self.n_classes]
-                Y_base = Ys[:, self.n_features+self.n_classes : self.n_features+self.n_classes*2]
-                Y_true = Ys[: ,self.n_features+self.n_classes*2 : ]
+                sep = [self.n_features + self.n_classes * i for i in range(3)]
+                Y_pred = sY[:, sep[0]:sep[1]]
+                Y_base = sY[:, sep[1]:sep[2]]
+                Y_true = sY[:, sep[2]:]
 
-                L_pred = K.sum(Y_true * K.log(Y_pred+eps), axis=-1)
-                L_base = K.sum(Y_true * K.log(Y_base+eps), axis=-1)
+                L_pred = -K.sum(Y_true * K.log(Y_pred+eps), axis=-1)
+                L_base = -K.sum(Y_true * K.log(Y_base+eps), axis=-1)
             else:
-                Y_pred = Ys[:, self.n_features]
-                Y_base = Ys[:, self.n_features + 1]
-                Y_true = Ys[:, self.n_features + 2]
+                Y_pred = sY[:, self.n_features]
+                Y_base = sY[:, self.n_features + 1]
+                Y_true = sY[:, self.n_features + 2]
 
-                L_pred = -(K.square(Y_true - Y_pred))
-                L_base = -(K.square(Y_true - Y_base))
-            # Reward regressions that are close to the baseline
+                L_pred = K.square(Y_true - Y_pred)
+                L_base = K.square(Y_true - Y_base)
+
+            # Reward predictors that have low loss and are close to the baseline
             imitation_loss = L_pred - L_base
 
-            # policy gradient
-            loss1 = imitation_loss * K.sum(s*K.log(S_pred+eps) + (1-s)*K.log(1-S_pred+eps), axis=-1)
+            # Policy gradient (actor-critic)
+            loss = imitation_loss * K.sum(s*K.log(S+eps) + (1-s)*K.log(1-S+eps), axis=-1)
+
             # Penalise complexity
-            complexity_loss = self.lam * K.mean(S_pred, axis=-1)
-            return K.mean(-loss1) + complexity_loss
+            complexity = lam * K.mean(S, axis=-1)
 
-        self.selector.compile(loss=selector_loss_fn, optimizer='adam')
-        loss = 'categorical_crossentropy' if self.n_classes else 'mse'
-        self.predictor.compile(loss=loss, optimizer='adam')
-        self.baseline.compile(loss=loss, optimizer='adam')
+            return K.mean(loss) + complexity
 
-    def build_selector(self):
+        self.selector.compile(loss=selector_loss_fn, optimizer=optimizer)
+
+    def __build_baseline(self, h_layers, h_dim):
         X = Input((self.n_features,))
         H = X
-        for _ in range(self.s_h_layers):
-            H = Dense(self.s_h_dim, activation='relu')(X)
-        S = Dense(self.n_features, activation='sigmoid')(H)
-        return Model(X, S)
-
-    def build_predictor(self):
-        X = Input((self.n_features,))  # not suppressed
-        s = Input((self.n_features,))
-        H = Multiply()([X, s])         # suppressed
-        for _ in range(self.h_layers):
-            H = Dense(self.h_dim, activation='relu')(H)
-        y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
-        return Model([X, s], y)
-
-    def build_baseline(self):
-        X = Input((self.n_features,))
-        H = X
-        for _ in range(self.h_layers):
-            H = Dense(self.h_dim, activation='relu')(X)
+        for _ in range(h_layers):
+            H = Dense(h_dim, activation='relu')(X)
         y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
         return Model(X, y)
 
-    def train(self, X, Y, n_iters, X_test=None, Y_test=None, batch_size=1024, verbose=True, save_history=True, h_iters=10):
-        # Check params
+    def __build_predictor(self, h_layers, h_dim):
+        X = Input((self.n_features,))  # not suppressed
+        s = Input((self.n_features,))  # binary selection vector
+        H = Multiply()([X, s])         # suppressed
+        H = Concatenate()([H, s])      # concatenated for distinguishing suppressed features from 0-valued features
+        for _ in range(h_layers):
+            H = Dense(h_dim, activation='relu')(H)
+        y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
+        return Model([X, s], y)
+
+    def __build_selector(self, h_layers, h_dim):
+        X = Input((self.n_features,))
+        H = X
+        for _ in range(h_layers):
+            H = Dense(h_dim, activation='relu')(H)
+        S = Dense(self.n_features, activation='sigmoid')(H)  # selection probability vector
+        return Model(X, S)
+
+    def train(self, X, Y, n_iters, X_test=None, Y_test=None, S_true=None,
+              batch_size=1024, verbose=True, save_history=True):
+        # Check array dims. If Y is a class vector (e.g. [0, 1, 2, 0]) then change it to one-hot encoding
         test = X_test is not None and Y_test is not None
-        if self.n_classes:# and (len(Y.shape) == 1 or Y.shape[2] == 1):
-            #weights = class_weight.compute_class_weight('balanced', np.unique(Y), Y)
+        if self.n_classes and (len(Y.shape) == 1 or Y.shape[1] == 1):
             Y = to_categorical(Y, num_classes=self.n_classes)
             if test:
                 Y_test = to_categorical(Y_test, num_classes=self.n_classes)
-        N = X.shape[0]
-        v_iters = n_iters // 10 if verbose else 0
+        n = X.shape[0]
 
+        # Prep for metric outputs during and after training
+        # TODO parameterise v_iters and h_iters
+        v_iters = n_iters // 10 if verbose else 0
+        h_iters = 10
         metric_str = 'acc' if self.n_classes else 'mse'
         history = {
             'loss':                 np.zeros((n_iters//h_iters, 3)),  # pred, base, sele
             f'{metric_str}':        np.zeros((n_iters//h_iters, 2)),  # pred, base
             f'{metric_str}-test':   np.zeros((n_iters//h_iters, 2)),  # pred, base
-            'S':                    np.zeros((n_iters//h_iters, batch_size, self.n_features)),
+            's':                    np.zeros((n_iters//h_iters, batch_size, self.n_features)),
         }
-        for it in tqdm(range(1, 1+n_iters)):
-            idx = np.random.randint(N, size=batch_size)
-            S = np.nan_to_num(self.selector.predict(X[idx])) # selector probs
-            s = np.random.binomial(1, S, size=(batch_size, self.n_features)) # sample from S
 
+        # Train
+        for it in tqdm(range(1, 1+n_iters)):
+            idx = np.random.randint(n, size=batch_size)                       # random batch
+            S = np.nan_to_num(self.selector.predict(X[idx]))                  # selector probs
+            s = np.random.binomial(1, S, size=(batch_size, self.n_features))  # sample from S
+
+            # Train baseline and predictor
             if self.n_classes:
-                base_loss = self.baseline.train_on_batch(X[idx], Y[idx])#, class_weight=weights)
-                pred_loss = self.predictor.train_on_batch([X[idx], s], Y[idx])#, class_weight=weights)
+                base_loss = self.baseline.train_on_batch(X[idx], Y[idx])
+                pred_loss = self.predictor.train_on_batch([X[idx], s], Y[idx])
             else:
                 base_loss = self.baseline.train_on_batch(X[idx], Y[idx])
                 pred_loss = self.predictor.train_on_batch([X[idx], s], Y[idx])
 
+            # Train selector
             Y_pred = self.predictor.predict([X[idx], s])
             Y_base = self.baseline.predict(X[idx])
-            Ys = np.concatenate([s, Y_pred, Y_base, Y[idx].reshape(batch_size,-1)], axis=1)
-            sele_loss = self.selector.train_on_batch(X[idx], Ys)
+            sY = np.concatenate([s, Y_pred, Y_base, Y[idx].reshape(batch_size, -1)], axis=-1)
+            sele_loss = self.selector.train_on_batch(X[idx], sY)
 
+            # Record/output metrics at appropriate intervals
             if it % h_iters == 0 or it % v_iters == 0:
+                # Calculate
                 if self.n_classes:
-                    Y_pred = np.argmax(Y_pred, axis=1)
-                    Y_base = np.argmax(Y_base, axis=1)
+                    Y_pred = np.argmax(Y_pred, axis=-1)
+                    Y_base = np.argmax(Y_base, axis=-1)
                     metric = np.array([
-                        np.sum(Y_pred==np.argmax(Y[idx], axis=1)),
-                        np.sum(Y_base==np.argmax(Y[idx], axis=1))]) / batch_size
+                        np.sum(Y_pred == np.argmax(Y[idx], axis=-1)),
+                        np.sum(Y_base == np.argmax(Y[idx], axis=-1))]) / batch_size
                     if test:
                         Y_pred = self.predict(X_test) > 0.5
                         Y_base = self.baseline.predict(X_test) > 0.5
                         metric_test = np.array([
-                            np.sum(Y_pred[:,0]==Y_test[:,0]),
-                            np.sum(Y_base[:,0]==Y_test[:,0])]) / X_test.shape[0]
+                            np.sum(Y_pred[:, 0] == Y_test[:, 0]),
+                            np.sum(Y_base[:, 0] == Y_test[:, 0])]) / X_test.shape[0]
                 else:
                     metric = np.array([
-                        np.mean(np.square(Y_pred-Y[idx])),
-                        np.mean(np.square(Y_base-Y[idx]))])
+                        np.mean(np.square(Y_pred - Y[idx])),
+                        np.mean(np.square(Y_base - Y[idx]))])
                     if test:
                         Y_pred = self.predict(X_test)
                         Y_base = self.baseline.predict(X_test)
                         metric_test = np.array([
-                            np.mean(np.square(Y_pred-Y_test)),
-                            np.mean(np.square(Y_base-Y_test))])
+                            np.mean(np.square(Y_pred - Y_test)),
+                            np.mean(np.square(Y_base - Y_test))])
 
-                # save history
+                # Save history
                 if save_history and it % h_iters == 0:
                     h_it = it // h_iters - 1
                     history['loss'][h_it] = [pred_loss, base_loss, sele_loss]
-                    history['S'][h_it] = S
+                    history['s'][h_it] = S
                     history[metric_str][h_it] = metric
                     if test:
                         history[f'{metric_str}-test'][h_it] = metric_test
 
+                # Output
                 if verbose and it % v_iters == 0:
-                    print(f'#{it}:\tsele loss\t{sele_loss:.4f}\n\tpred loss\t{pred_loss:.4f}\n\tbase loss\t{base_loss:.4f}')
-                    print(f'\tpred {metric_str}\t{metric[0]:.4f}\tbase {metric_str}\t{metric[1]:.4f}')
+                    print(f'#{it}:' +
+                          f'\tsele loss\t{sele_loss:.4f}\n' +
+                          f'\tpred loss\t{pred_loss:.4f}\n' +
+                          f'\tbase loss\t{base_loss:.4f}\n' +
+                          f'\tpred {metric_str}\t{metric[0]:.4f}' +
+                          f'\tbase {metric_str}\t{metric[1]:.4f}')
                     if test:
-                        print(f'\tpred {metric_str} (test)\t{metric_test[0]:.4f}\tbase {metric_str} (test)\t{metric_test[1]:.4f}')
-                    feat_prob_mean = np.mean(S, axis=0)
-                    feat_prob_str = np.array2string(feat_prob_mean, formatter={'float_kind': '{0:.2f}'.format})
-                    print(f'features\n{feat_prob_str}')
-                    if self.relevant_features is not None:
-                        print(f'true features\n{np.array2string(self.relevant_features)}')
+                        print(f'\tpred {metric_str} (test)\t{metric_test[0]:.4f}' +
+                              f'\tbase {metric_str} (test)\t{metric_test[1]:.4f}')
+                    S_mean = np.mean(S, axis=0)
+                    S_mean_str = np.array2string(S_mean, formatter={'float_kind': '{0:.2f}'.format})
+                    print(f'features\n{S_mean_str}')
+                    if S_true is not None:
+                        print(f'true features\n{np.array2string(S_true)}')
 
         return history
 
@@ -181,7 +210,7 @@ class Invase:
 
     def predict_features(self, X, threshold=0.5):
         S = self.selector.predict(X)
-        if threshold == None:
+        if threshold is None:
             return S
         s = S > threshold
         return s
