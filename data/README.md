@@ -4,12 +4,10 @@
 The Infant Health and Development Program [[1]](#1) was an RCT (n = 985, control = 608, treated = 377) with binary treatment assignment and 28 recorded covariates (binary = 22, continuous = 6). Following Hill [[2]](#2), we induce selection bias by removing non-whites from the treated population (such that treated = 139) and discard the 3 binary covariates describing race. We then generate synthetic outcomes according to one of two settings:
 
 <div style="text-align:center">
-<img src="https://render.githubusercontent.com/render/math?math=
-Y \sim N\left(\begin{bmatrix}X\beta_A\\X\beta_A+4\end{bmatrix},\,I\right)
+<img src="https://render.githubusercontent.com/render/math?math=Y \sim N\left(\begin{bmatrix}X\beta_A\\X\beta_A+4\end{bmatrix},\,I\right)
 ">
 
-<img src="https://render.githubusercontent.com/render/math?math=
-Y \sim N\left(\begin{bmatrix}\exp((X+W)\beta_B)\\X\beta_B\end{bmatrix},\,I\right)
+<img src="https://render.githubusercontent.com/render/math?math=Y \sim N\left(\begin{bmatrix}\exp((X+W)\beta_B)\\X\beta_B\end{bmatrix},\,I\right)
 ">
 </div>
 
