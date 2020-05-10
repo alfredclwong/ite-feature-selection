@@ -1,4 +1,4 @@
-# Datasets for causal inference (ITE)
+# Datasets for causal inference (ITE) and feature selection
 
 ## IHDP
 The Infant Health and Development Program [[1]](#1) was an RCT (n = 985, control = 608, treated = 377) with binary treatment assignment and 28 recorded covariates (binary = 22, continuous = 6). Following Hill [[2]](#2), we induce selection bias by removing non-whites from the treated population (such that treated = 139) and discard the 3 binary covariates describing race. We then generate synthetic outcomes according to one of two settings:
@@ -18,6 +18,8 @@ The Linked Births and Infant Deaths Database (LBIDD) [[3]](#3) was used in the I
 
 ## Twins
 
+## L2X
+**Syn1-6** inspired by L2X [[5]](#5) and INVASE [[6]](#6) papers, implemented in *synthetic_data.py*.
 
 ## References
 <a id="1">[1]</a> 
@@ -39,3 +41,13 @@ Mon Vital Stat Rep, 46(suppl 2):1-22, 1998.
 Ehud Karavani, Yishai Shimoni, & Chen Yanover. (2018, January 31). 
 IBM Causal Inference Benchmarking Framework (Version v1.0.0). 
 Zenodo. http://doi.org/10.5281/zenodo.1163587
+
+<a id="5">[5]</a>
+Jianbo Chen, Le Song, Martin J Wainwright, and Michael I Jordan.
+Learning to explain: An information-theoretic perspective on model interpretation.
+arXiv preprint arXiv:1802.07814, 2018.
+
+<a id="6">[6]</a>
+Jinsung Yoon, James Jordon, and Mihaela van der Schaar.
+INVASE: Instance-wise variable selection using neural networks.
+In International Conference on Learning Representations, 2019.

@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from scipy.special import logit, expit
+from scipy.special import expit
 
 
 def synthetic_data(csv_path=None, N=20000, n_features=11, n_treatments=2, models=None, corr=False):
@@ -127,25 +127,13 @@ def get_model(i):
 def get_YS(X, n_treatments=2, models=None, binary=True):
     N, n_features = X.shape
     if not models:
-        models = [t%6+1 for t in range(n_treatments)]
+        models = [t % 6 + 1 for t in range(n_treatments)]
     n_treatments = len(models)
 
     Y = np.zeros((N, n_treatments))
     S = np.zeros((n_treatments, N, n_features))
     for t, model in enumerate(models):
         Y[:, t], S[t, :, :] = get_model(model)(X)
-    #Y = expit(Y)
-    #Y = Y - Y.min()
-    #Y = Y / Y.max()
-    #Y = 1 / (1. + np.exp(Y))
     if binary:
         Y = np.random.binomial(1, p=expit(Y))
     return Y, S
-
-
-if __name__ == '__main__':
-    X, T, Y, S = synthetic_data(models=[1, 2, 3, 4, 5, 6])
-    print(X)
-    print(T)
-    print(Y)
-    print(S)
