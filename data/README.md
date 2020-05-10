@@ -3,11 +3,9 @@
 ## IHDP
 The Infant Health and Development Program [[1]](#1) was an RCT (n = 985, control = 608, treated = 377) with binary treatment assignment and 28 recorded covariates (binary = 22, continuous = 6). Following Hill [[2]](#2), we induce selection bias by removing non-whites from the treated population (such that treated = 139) and discard the 3 binary covariates describing race. We then generate synthetic outcomes according to one of two settings:
 
-<p align="center">
-    ![Y \sim N\left(\begin{bmatrix}X\beta_A\\X\beta_A + 4\end{bmatrix},\,I\right)](https://render.githubusercontent.com/render/math?math=Y%20%5Csim%20N%5Cleft(%5Cbegin%7Bbmatrix%7DX%5Cbeta_A%5C%5CX%5Cbeta_A%20%2B%204%5Cend%7Bbmatrix%7D%2C%5C%2CI%5Cright))
+![Y \sim N\left(\begin{bmatrix}X\beta_A\\X\beta_A + 4\end{bmatrix},\,I\right)](https://render.githubusercontent.com/render/math?math=Y%20%5Csim%20N%5Cleft(%5Cbegin%7Bbmatrix%7DX%5Cbeta_A%5C%5CX%5Cbeta_A%20%2B%204%5Cend%7Bbmatrix%7D%2C%5C%2CI%5Cright))
 
-    ![Y \sim N\left(\begin{bmatrix}\exp((X+W)\beta_B)\\X\beta_B\end{bmatrix},\,I\right)](https://render.githubusercontent.com/render/math?math=Y%20%5Csim%20N%5Cleft(%5Cbegin%7Bbmatrix%7D%5Cexp((X%2BW)%5Cbeta_B)%5C%5CX%5Cbeta_B%5Cend%7Bbmatrix%7D%2C%5C%2CI%5Cright))
-</p>
+![Y \sim N\left(\begin{bmatrix}\exp((X+W)\beta_B)\\X\beta_B\end{bmatrix},\,I\right)](https://render.githubusercontent.com/render/math?math=Y%20%5Csim%20N%5Cleft(%5Cbegin%7Bbmatrix%7D%5Cexp((X%2BW)%5Cbeta_B)%5C%5CX%5Cbeta_B%5Cend%7Bbmatrix%7D%2C%5C%2CI%5Cright))
 
 where the &beta; are randomly generated, taking values in {0, 1, 2, 3, 4} and {0, 0.1, 0.2, 0.3, 0.4}, respectively. This means it is likely that some covariates are not used in the generative model.
 
