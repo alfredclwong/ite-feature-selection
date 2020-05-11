@@ -10,9 +10,9 @@ eps = 1e-8
 
 default_hyperparams = {
     'h_layers_pred':    2,
-    'h_dim_pred':       lambda x: 2*x,  # noqa 272
+    'h_dim_pred':       lambda x: 100,  # noqa 272
     'h_layers_base':    2,
-    'h_dim_base':       lambda x: 2*x,  # noqa 272
+    'h_dim_base':       lambda x: 100,  # noqa 272
     'h_layers_sel':     1,
     'h_dim_sel':        lambda x: 2*x,  # noqa 272
     'lam':              0.1,
