@@ -3,13 +3,15 @@ import numpy as np
 from scipy.special import expit
 
 
-def synthetic_data(csv_path=None, N=20000, n_features=11, n_treatments=2, models=None, corr=False):
+def synthetic_data(csv_path=None, N=20000, n_features=11, n_treatments=2, models=None, corr=False, noiseX=False, noiseY=False):
     assert n_features >= 10
     if models:
         n_treatments = len(models)
     X = get_X(csv_path, N, n_features, corr)
     T = get_T(X, n_treatments)
-    Y, S = get_YS(X, n_treatments, models)
+    Y, S = get_YS(X, n_treatments, models, noise=noiseY)
+    if noiseX:
+        X += .5 * np.random.standard_normal(X.shape)
     return X, T, Y, S
 
 
@@ -57,7 +59,7 @@ def get_model(i):
     if i == 'A':
         def model(X):
             n, n_features = X.shape
-            beta = np.random.choice(5, size=n_features, p=[.5, .2, .15, .1, .05]).astype(np.float32)
+            beta = np.random.choice(5, size=n_features, p=[.5, .2, .15, .1, .05]).astype(np.float)
             Y = np.zeros((n, 2))
             Y[:, 0] = X @ beta
             Y[:, 1] = X @ beta + 4
@@ -66,13 +68,14 @@ def get_model(i):
         def model(X):
             n, n_features = X.shape
             beta = np.random.choice(5, size=n_features, p=[.6, .1, .1, .1, .1]) / 10
+            Y = np.zeros((n, 2))
             Y[:, 0] = np.exp((X + .5) @ beta)
             Y[:, 1] = X @ beta
             return Y, beta
     elif i == 1:
-        # XOR
+        # soft XOR
         def model(X):
-            Y = X[:, 0] * X[:, 1]
+            Y = 10 * X[:, 0] * X[:, 1]
             S = np.zeros(X.shape)
             S[:, :2] = 1
             return Y, S
@@ -119,21 +122,38 @@ def get_model(i):
             Y[idx], S[idx] = get_model(3)(X[idx])
             S[:, -1] = 1
             return Y, S
+    elif i == 7:
+        # merged models
+        def model(X):
+            Y = np.zeros(X.shape[0])
+            S = np.zeros(X.shape)
+            idx = X[:, -1] < 0
+            Y[idx], S[idx, 3:] = get_model(1)(X[idx, 3:])
+            idx = np.invert(idx)
+            Y[idx], S[idx] = get_model(2)(X[idx])
+            return Y, S
     else:
         model = get_model(np.random.randint(1, 7))
     return model
 
 
-def get_YS(X, n_treatments=2, models=None, binary=True):
+def get_YS(X, n_treatments=2, models=None, binary=True, noise=False):
     N, n_features = X.shape
     if not models:
         models = [t % 6 + 1 for t in range(n_treatments)]
-    n_treatments = len(models)
 
-    Y = np.zeros((N, n_treatments))
-    S = np.zeros((n_treatments, N, n_features))
-    for t, model in enumerate(models):
-        Y[:, t], S[t, :, :] = get_model(model)(X)
+    ihdp = models == 'A' or models == 'B'
+    if ihdp:
+        Y, S = get_model(models)(X)
+    else:
+        n_treatments = len(models)
+        Y = np.zeros((N, n_treatments))
+        S = np.zeros((n_treatments, N, n_features))
+        for t, model in enumerate(models):
+            Y[:, t], S[t, :, :] = get_model(model)(X)
+
+    if noise:
+        Y += np.random.standard_normal(size=Y.shape)
     if binary:
         Y = np.random.binomial(1, p=expit(Y))
     return Y, S
