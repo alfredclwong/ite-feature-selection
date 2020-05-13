@@ -2,6 +2,7 @@ import numpy as np
 from itertools import product
 import os
 import pandas as pd
+import seaborn as sns
 
 
 def process(x, n=3):
@@ -36,3 +37,26 @@ def read_ihdp(sel_bias=True):
         keep = np.invert(not_white & treated)
         x = x[keep]
         t = t[keep]
+
+
+def corr_cmap():
+    return sns.diverging_palette(220, 10, as_cmap=True)
+
+
+# Chinese restaurant process
+def crp(n, alpha=1):
+    tables = []
+    n_at_tables = []
+    n_of_tables = 0
+    for i in range(n):
+        p = [x / (i + alpha) for x in n_at_tables + [alpha]]
+        #p.append(1 - sum(p))
+        table_choice = np.random.choice(n_of_tables + 1, p=p)
+        if table_choice == n_of_tables:
+            tables.append([i])
+            n_at_tables.append(1)
+            n_of_tables += 1
+        else:
+            tables[table_choice].append(i)
+            n_at_tables[table_choice] += 1
+    return tables
