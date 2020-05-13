@@ -117,14 +117,14 @@ class Invase:
         # Prep for metric outputs during and after training
         # TODO parameterise v_iters and h_iters
         v_iters = n_iters // 10 if verbose else 0
-        h_iters = 10
+        h_iters = 10 if save_history else 0
         metric_str = 'acc' if self.n_classes else 'mse'
         history = {
             'loss':                 np.zeros((n_iters//h_iters, 3)),  # pred, base, sele
             f'{metric_str}':        np.zeros((n_iters//h_iters, 2)),  # pred, base
             f'{metric_str}-test':   np.zeros((n_iters//h_iters, 2)),  # pred, base
             's':                    np.zeros((n_iters//h_iters, batch_size, self.n_features)),
-        }
+        } if h_iters else None
 
         # Train
         for it in tqdm(range(1, 1+n_iters)):
@@ -147,7 +147,7 @@ class Invase:
             sele_loss = self.selector.train_on_batch(X[idx], sY)
 
             # Record/output metrics at appropriate intervals
-            if it % h_iters == 0 or it % v_iters == 0:
+            if (h_iters and it % h_iters == 0) or (v_iters and it % v_iters == 0):
                 # Calculate
                 if self.n_classes:
                     Y_pred = np.argmax(Y_pred, axis=-1)
