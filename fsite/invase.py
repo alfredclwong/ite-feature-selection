@@ -15,13 +15,13 @@ default_hyperparams = {
     'h_dim_base':       lambda x: 100,  # noqa 272
     'h_layers_sel':     1,
     'h_dim_sel':        lambda x: 2*x,  # noqa 272
-    'lam':              0.1,
+#    'lam':              0.1,
     'optimizer':        'adam'
 }
 
 
 class Invase:
-    def __init__(self, n_features, n_classes, hyperparams=default_hyperparams, verbose=True):
+    def __init__(self, n_features, n_classes, lam=0.1, hyperparams=default_hyperparams, verbose=True):
         self.n_features = n_features
         self.n_classes = n_classes  # 0 = regression, 2+ = classification
         pred_base_loss = 'categorical_crossentropy' if self.n_classes else 'mse'
@@ -43,7 +43,7 @@ class Invase:
         h_layers_sel = hyperparams['h_layers_sel']
         h_dim_sel = hyperparams['h_dim_sel'](self.n_features)
         self.selector = self.__build_selector(h_layers_sel, h_dim_sel)
-        lam = hyperparams['lam']
+        # lam = hyperparams['lam']
 
         def selector_loss_fn(sY, S):
             # Extract s (sampled selection vector) and Y_pred, Y_base, Y_true (factual) from sY
@@ -117,7 +117,7 @@ class Invase:
         # Prep for metric outputs during and after training
         # TODO parameterise v_iters and h_iters
         v_iters = n_iters // 10 if verbose else 0
-        h_iters = 10 if save_history else 0
+        h_iters = 50 if save_history else 0
         metric_str = 'acc' if self.n_classes else 'mse'
         history = {
             'loss':                 np.zeros((n_iters//h_iters, 3)),  # pred, base, sele
