@@ -3,8 +3,11 @@ from itertools import product
 import os
 import pandas as pd
 import seaborn as sns
+from sklearn.model_selection import GridSearchCV
+from sklearn.neighbors import KernelDensity
 
 
+# n-width mean filter
 def process(x, n=3):
     cs = np.cumsum(x, axis=0)
     return (cs[n:]-cs[:-n])/n
@@ -39,6 +42,7 @@ def read_ihdp(sel_bias=True):
         t = t[keep]
 
 
+# Nice colormap for sns correlation heatmaps
 def corr_cmap():
     return sns.diverging_palette(220, 10, as_cmap=True)
 
@@ -60,3 +64,13 @@ def crp(n, alpha=1):
             tables[table_choice].append(i)
             n_at_tables[table_choice] += 1
     return tables
+
+
+# Use KDE method to estimate a pdf with bandwidth determined by CV20 grid search
+def est_pdf(x, x_grid, bws=np.linspace(0.1, 1.0, 30), cv=20):
+    grid = GridSearchCV(KernelDensity(), {'bandwidth': bws}, cv=cv)
+    grid.fit(x[:, None])
+    #print(grid.best_params_)
+    kde = grid.best_estimator_
+    pdf = np.exp(kde.score_samples(x_grid[:, None]))
+    return pdf
