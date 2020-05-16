@@ -147,7 +147,7 @@ class Invase:
             sele_loss = self.selector.train_on_batch(X[idx], sY)
 
             # Record/output metrics at appropriate intervals
-            if (h_iters and it % h_iters == 0) or (v_iters and it % v_iters == 0):
+            if (h_iters and it % h_iters == 0) or (v_iters and it % v_iters == 0) or it == n_iters:
                 # Calculate
                 if self.n_classes:
                     Y_pred = np.argmax(Y_pred, axis=-1)
@@ -182,7 +182,7 @@ class Invase:
                         history[f'{metric_str}-test'][h_it] = metric_test
 
                 # Output
-                if verbose and it % v_iters == 0:
+                if verbose and it % v_iters == 0 or it == n_iters:
                     print(f'#{it}:' +
                           f'\tsele loss\t{sele_loss:.4f}\n' +
                           f'\tpred loss\t{pred_loss:.4f}\n' +
