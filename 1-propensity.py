@@ -5,17 +5,7 @@ import matplotlib.pyplot as plt
 from fsite.invase import Invase
 from utils.utils import default_env, est_pdf
 from tqdm import tqdm
-
-default_env()
-hyperparams = {
-    'h_layers_pred':    1,
-    'h_dim_pred':       lambda x: 100,  # noqa 272
-    'h_layers_base':    1,
-    'h_dim_base':       lambda x: 100,  # noqa 272
-    'h_layers_sel':     1,
-    'h_dim_sel':        lambda x: 2*x,  # noqa 272
-    'optimizer':        'adam'
-}
+import pandas as pd
 
 
 def predict(X, T, Y, Y_true=None):
@@ -41,28 +31,41 @@ def predict(X, T, Y, Y_true=None):
         weights[1, i] = pT[T[i]] / propensity_scores[1, i, T[i]]
 
     # Output max weights from each model for diagnostics
-    print(np.max(weights, axis=1))
+    max_weights = np.max(weights, axis=1)
 
     # Return IPW ATE estimates for each model
     Yw = Y * weights[0]
     ate_invase = np.mean(Yw[T == 1]) - np.mean(Yw[T == 0])
     Yw = Y * weights[1]
     ate_baseline = np.mean(Yw[T == 1]) - np.mean(Yw[T == 0])
-    return ate_invase, ate_baseline
+    return ate_invase, ate_baseline, max_weights
 
+
+default_env()
+hyperparams = {
+    'h_layers_pred':    1,
+    'h_dim_pred':       lambda x: 100,  # noqa 272
+    'h_layers_base':    1,
+    'h_dim_base':       lambda x: 100,  # noqa 272
+    'h_layers_sel':     1,
+    'h_dim_sel':        lambda x: 2*x,  # noqa 272
+    'optimizer':        'adam'
+}
 
 # Load saved progress file and perform more trials if necessary
-n_trials = 100
+results_path = 'results/1-propensity.csv'
+headers = 'true naive invase base max(w_i) max(w_b)'
+n_trials = 1000
 progress = 0
-results = np.zeros((n_trials, 4))
+results = np.zeros((n_trials, 6))
 try:
-    csv = np.loadtxt('1-propensity.csv')
-    assert(csv.shape[1] == results.shape[1])
-    progress = csv.shape[0]
+    _results = pd.read_csv(results_path, index_col=0).values
+    assert(_results.shape[1] == results.shape[1])
+    progress = _results.shape[0]
     if progress < n_trials:
-        results[:progress] = csv
+        results[:progress] = _results
         raise IndexError
-    results = csv
+    results = _results
 except (IOError, IndexError):
     for i in tqdm(range(progress, n_trials)):
         # Generate X, T, Y such that X0, X1 and X2 are confounders
@@ -81,27 +84,28 @@ except (IOError, IndexError):
         # Perform IPW, report all estimates and biases, save progress
         ate_true = np.mean(Y[:, 1] - Y[:, 0])
         ate_naive = np.mean(Yf[T == 1]) - np.mean(Yf[T == 0])
-        ate_invase, ate_baseline = predict(X, T, Yf, Y_true=Y)
-        results[i] = [ate_true, ate_naive, ate_invase, ate_baseline]
+        ate_invase, ate_baseline, max_weights = predict(X, T, Yf, Y_true=Y)
+        results[i] = [ate_true, ate_naive, ate_invase, ate_baseline] + list(max_weights)
         ebias = 2 * 0.373 * beta[2]
         bias = ate_naive - ate_true
         print('\n'.join(map(lambda t: ''.join(t), zip(
-            map(lambda s: f'{s+":":10}', 'beta E[bias] bias true naive invase baseline'.split()),
+            map(lambda s: f'{s+":":10}', f'beta E[bias] bias {headers}'.split()),
             [str(beta)] + list(map(lambda x: f'{x:8f}', [ebias, bias] + list(results[i])))
         ))))
-        np.savetxt('1-propensity.csv', results[:i+1])
+        df = pd.DataFrame(results[:i+1], columns=headers.split())
+        df.to_csv(results_path)
 
 # Loaded. Report means, stds, and plot estimated pdfs.
-print('\t'.join([''] + 'true naive invase baseline'.split()))
+print('\t'.join([''] + headers.split()))
 print('\t'.join(['mean'] + list(map(lambda x: f'{x:.3f}', np.mean(results, axis=0)))))
 print('\t'.join(['std'] + list(map(lambda x: f'{x:.3f}', np.std(results, axis=0)))))
 
 plt.figure()
 x_grid = np.linspace(-2, 5, 100)
-for i in range(4):
+for i in range(results.shape[1]):
     pdf = est_pdf(results[:, i], x_grid)
     plt.plot(x_grid, pdf)
-plt.legend('true naive invase baseline'.split())
+plt.legend(headers.split())
 plt.xlim([np.min(x_grid), np.max(x_grid)])
 plt.ylim([0, 4])
 plt.show()
