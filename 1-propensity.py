@@ -52,6 +52,7 @@ hyperparams = {
 }
 
 # Load saved progress file and perform more trials if necessary
+save_stuff = False
 results_path = 'results/1-propensity.csv'
 headers = 'true naive oracle invase base max(W) max(Wi) max(Wb)'
 n_trials = 1000
@@ -92,7 +93,8 @@ except (IOError, IndexError):
             [str(beta)] + list(map(lambda x: f'{x:8f}', [ebias, bias] + list(results[i])))
         ))))
         df = pd.DataFrame(results[:i+1], columns=headers.split())
-        df.to_csv(results_path)
+        if save_stuff:
+            df.to_csv(results_path)
 
 # Loaded. Report means, stds, and plot estimated pdfs.
 print('\t'.join([''] + headers.split()))
@@ -110,5 +112,6 @@ plt.ylabel('Probability')
 plt.xticks(np.arange(4))
 plt.xlim([np.min(x_grid), np.max(x_grid)])
 plt.ylim([0, 4])
-plt.savefig('../iib-diss/1-propensity.pdf', bbox_inches='tight')
+if save_stuff:
+    plt.savefig('../iib-diss/1-propensity.pdf', bbox_inches='tight')
 plt.show()
