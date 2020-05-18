@@ -15,6 +15,46 @@ def synthetic_data(csv_path=None, N=20000, n_features=11, n_treatments=2, models
     return X, T, Y, S
 
 
+def get_ihdp_XT():
+    data = pd.read_csv('data/ihdp.csv', index_col=0).values
+    assert data.shape == (985, 29)
+    X = data[:, 1:-3]
+    X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
+    T = data[:, 0].astype(int)
+    # remove non-whites who were treated
+    not_white = data[:, -3] == 0
+    treated = T == 1
+    keep = np.invert(not_white & treated)
+    X = X[keep]
+    T = T[keep]
+    assert X.shape == (747, 25) and T.shape == (747,)
+    return X, T
+
+
+def get_ihdp_Yb(X, T, model):
+    n, n_features = X.shape
+    Y = np.zeros((n, 2))
+    if model == 'A':
+        beta = np.random.choice(5, size=n_features, p=[.5, .2, .15, .1, .05]).astype(np.float)
+        Y[:, 0] = X @ beta
+        Y[:, 1] = X @ beta + 4
+    if model.startswith('B'):
+        beta = np.random.choice(5, size=n_features, p=[.6, .1, .1, .1, .1]) / 10
+        Y[:, 0] = np.exp((X + .5) @ beta)
+        if model == 'B1':
+            # overlap: E[tau(x_i)|T_i=1] = 4
+            E_Y0_T1 = np.mean(Y[T == 1, 0])
+            Xb = X @ beta
+            Y[:, 1] = Xb - np.mean(Xb[T == 1]) + E_Y0_T1 + 4
+        elif model == 'B2':
+            # incomplete: E[tau(x_i)|T_i=0] = 4
+            E_Y0_T0 = np.mean(Y[T == 0, 0])
+            Xb = X @ beta
+            Y[:, 1] = Xb - np.mean(Xb[T == 0]) + E_Y0_T0 + 4
+    Y = np.random.normal(Y)
+    return Y, beta
+
+
 def get_X(csv_path=None, N=10000, n_features=10, corr=False):
     assert csv_path or (N and n_features)
     if csv_path:
@@ -56,26 +96,10 @@ def get_T(X, n_treatments=2):
 
 
 def get_model(i):
-    if i == 'A':
-        def model(X):
-            n, n_features = X.shape
-            beta = np.random.choice(5, size=n_features, p=[.5, .2, .15, .1, .05]).astype(np.float)
-            Y = np.zeros((n, 2))
-            Y[:, 0] = X @ beta
-            Y[:, 1] = X @ beta + 4
-            return Y, beta
-    elif i == 'B':
-        def model(X):
-            n, n_features = X.shape
-            beta = np.random.choice(5, size=n_features, p=[.6, .1, .1, .1, .1]) / 10
-            Y = np.zeros((n, 2))
-            Y[:, 0] = np.exp((X + .5) @ beta)
-            Y[:, 1] = X @ beta
-            return Y, beta
-    elif i == 1:
+    if i == 1:
         # soft XOR
         def model(X):
-            Y = 10 * X[:, 0] * X[:, 1]
+            Y = X[:, 0] * X[:, 1] #*10
             S = np.zeros(X.shape)
             S[:, :2] = 1
             return Y, S
@@ -86,7 +110,7 @@ def get_model(i):
             S[:, 2:6] = 1
             return Y, S
     elif i == 3:
-        # X_7 can dominate if the coeffecient is too high (100 in L2X, 10 in INVASE, 5 => 100%)
+        # X_7 can dominate if the coefficient is too high (100 in L2X, 10 in INVASE, 5 => 100%)
         def model(X):
             Y = - 5 * np.sin(2 * X[:, 6]) + 2 * np.abs(X[:, 7]) + X[:, 8] + np.exp(-X[:, 9])
             S = np.zeros(X.shape)
@@ -142,15 +166,11 @@ def get_YS(X, n_treatments=2, models=None, binary=True, noise=False):
     if not models:
         models = [t % 6 + 1 for t in range(n_treatments)]
 
-    ihdp = models == 'A' or models == 'B'
-    if ihdp:
-        Y, S = get_model(models)(X)
-    else:
-        n_treatments = len(models)
-        Y = np.zeros((N, n_treatments))
-        S = np.zeros((n_treatments, N, n_features))
-        for t, model in enumerate(models):
-            Y[:, t], S[t, :, :] = get_model(model)(X)
+    n_treatments = len(models)
+    Y = np.zeros((N, n_treatments))
+    S = np.zeros((n_treatments, N, n_features))
+    for t, model in enumerate(models):
+        Y[:, t], S[t, :, :] = get_model(model)(X)
 
     if noise:
         Y += np.random.standard_normal(size=Y.shape)
