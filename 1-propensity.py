@@ -57,7 +57,7 @@ results_path = 'results/1-propensity.csv'
 headers = 'true naive oracle invase base max(W) max(Wi) max(Wb)'
 n_trials = 1000
 progress = 0
-results = np.zeros((n_trials, 8))
+results = np.zeros((n_trials, len(headers.split())))
 try:
     _results = pd.read_csv(results_path, index_col=0).values
     assert(_results.shape[1] == results.shape[1])
