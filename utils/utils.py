@@ -1,7 +1,6 @@
 import numpy as np
 from itertools import product
 import os
-import pandas as pd
 import seaborn as sns
 from sklearn.model_selection import GridSearchCV
 from sklearn.neighbors import KernelDensity
@@ -27,21 +26,6 @@ def default_env():
             )
 
 
-def read_ihdp(sel_bias=True):
-    data = pd.read_csv('data/ihdp.csv').values
-    x = data[:, 2:-3]
-    x = (x - np.mean(x, axis=0)) / np.std(x, axis=0)
-    t = data[:, 1].astype(np.int)
-
-    if sel_bias:
-        # remove non-whites who were treated
-        not_white = data[:, -3] == 0
-        treated = t == 1
-        keep = np.invert(not_white & treated)
-        x = x[keep]
-        t = t[keep]
-
-
 # Nice colormap for sns correlation heatmaps
 def corr_cmap():
     return sns.diverging_palette(220, 10, as_cmap=True)
@@ -54,7 +38,7 @@ def crp(n, alpha=1):
     n_of_tables = 0
     for i in range(n):
         p = [x / (i + alpha) for x in n_at_tables + [alpha]]
-        #p.append(1 - sum(p))
+        # p.append(1 - sum(p))
         table_choice = np.random.choice(n_of_tables + 1, p=p)
         if table_choice == n_of_tables:
             tables.append([i])
@@ -70,7 +54,7 @@ def crp(n, alpha=1):
 def est_pdf(x, x_grid, bws=np.linspace(0.1, 1.0, 30), cv=20):
     grid = GridSearchCV(KernelDensity(), {'bandwidth': bws}, cv=cv)
     grid.fit(x[:, None])
-    #print(grid.best_params_)
+    # print(grid.best_params_)
     kde = grid.best_estimator_
     pdf = np.exp(kde.score_samples(x_grid[:, None]))
     return pdf
