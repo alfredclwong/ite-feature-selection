@@ -17,9 +17,10 @@ def param_search(params):
         yield {k: v[idxs[i]] for i, (k, v) in enumerate(params.items())}
 
 
-def default_env():
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'    # suppress warnings
-    os.environ['CUDA_VISIBLE_DEVICES'] = ''     # disable GPU
+def default_env(gpu=False):
+    if not gpu:
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress warnings
+        os.environ['CUDA_VISIBLE_DEVICES'] = ''   # disable GPU
     np.set_printoptions(
             linewidth=160,
             formatter={'float_kind': lambda x: f'{x:.4f}'},
