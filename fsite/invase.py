@@ -192,11 +192,13 @@ class Invase:
                     if test:
                         print(f'\tpred {metric_str} (test)\t{metric_test[0]:.4f}' +
                               f'\tbase {metric_str} (test)\t{metric_test[1]:.4f}')
+                    feature_formatter = {'float_kind': '{0:.2f}'.format}
                     S_mean = np.mean(S, axis=0)
-                    S_mean_str = np.array2string(S_mean, formatter={'float_kind': '{0:.2f}'.format})
+                    S_mean_str = np.array2string(S_mean, formatter=feature_formatter)
                     print(f'features\n{S_mean_str}')
                     if S_true is not None:
-                        print(f'true features\n{np.array2string(S_true)}')
+                        S_true_str = np.array2string(S_true.astype(np.float), formatter=feature_formatter)
+                        print(f'true features\n{S_true_str}')
 
         return history
 
