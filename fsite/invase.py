@@ -21,7 +21,7 @@ default_hyperparams = {
 
 
 class Invase:
-    def __init__(self, n_features, n_classes, lam=0.1, hyperparams=default_hyperparams, verbose=True):
+    def __init__(self, n_features, n_classes, lam, hyperparams=default_hyperparams, verbose=True):
         self.n_features = n_features
         self.n_classes = n_classes  # 0 = regression, 2+ = classification
         pred_base_loss = 'categorical_crossentropy' if self.n_classes else 'mse'

@@ -16,7 +16,7 @@ def predict(X, T, Y, Y_true=None):
     n, n_features = X.shape
 
     X_train, X_test, T_train, T_test = train_test_split(X, T, test_size=.2)
-    invase = Invase(n_features, n_treatments, hyperparams=hyperparams)
+    invase = Invase(n_features, n_treatments, lam=0.1, hyperparams=hyperparams)
     invase.train(X_train, T_train, 500, X_test, T_test, verbose=False, save_history=False)
 
     # Store three sets of propensity scores: oracle, INVASE, baseline
