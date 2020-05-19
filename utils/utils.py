@@ -9,6 +9,62 @@ from tensorflow.python.client import device_lib
 import re
 
 
+# Chinese restaurant process
+def crp(n, alpha=1):
+    tables = []
+    n_at_tables = []
+    n_of_tables = 0
+    for i in range(n):
+        p = [x / (i + alpha) for x in n_at_tables + [alpha]]
+        # p.append(1 - sum(p))
+        table_choice = np.random.choice(n_of_tables + 1, p=p)
+        if table_choice == n_of_tables:
+            tables.append([i])
+            n_at_tables.append(1)
+            n_of_tables += 1
+        else:
+            tables[table_choice].append(i)
+            n_at_tables[table_choice] += 1
+    return tables
+
+
+# Use KDE method to estimate a pdf with bandwidth determined by CV20 grid search
+def est_pdf(x, x_grid, bws=np.linspace(0.1, 1.0, 30), cv=20):
+    grid = GridSearchCV(KernelDensity(), {'bandwidth': bws}, cv=cv)
+    grid.fit(x[:, None])
+    # print(grid.best_params_)
+    kde = grid.best_estimator_
+    pdf = np.exp(kde.score_samples(x_grid[:, None]))
+    return pdf
+
+
+# Train-test split for {X, T, Y} observational datasets, stratified by treatment assignment
+def XTY_split(X, T, Y, test_size=.2):
+    n = X.shape[0]
+    n_test = int(n * test_size)
+    n_treatments = np.max(T) + 1
+
+    # number of samples and number of desired test samples for each t-value
+    nt = np.array([np.sum(T == t) for t in range(n_treatments)])
+    nt_test = (nt * test_size).astype(int)
+    nt_test[-1] = n_test - np.sum(nt_test[:-1])  # to avoid rounding errors when n_treatments > 2
+    nt_test_cs = np.cumsum(nt_test)
+
+    # idxs for each t-value
+    t_idxs = [np.where(T == t)[0] for t in range(n_treatments)]
+    test_idxs = np.zeros(n_test, dtype=int)
+    for t in range(n_treatments):
+        idxs = np.random.choice(t_idxs[t], size=nt_test[t], replace=False)
+        if t == 0:
+            test_idxs[:nt_test_cs[t]] = idxs
+        else:
+            test_idxs[nt_test_cs[t-1]: nt_test_cs[t]] = idxs
+    train_idxs = np.ones(n, dtype=bool)
+    train_idxs[test_idxs] = 0
+
+    return X[train_idxs], X[test_idxs], T[train_idxs], T[test_idxs], Y[train_idxs], Y[test_idxs]
+
+
 # n-width mean filter
 def process(x, n=3):
     cs = np.cumsum(x, axis=0)
@@ -45,32 +101,3 @@ def default_env(gpu=False):
 # Nice colormap for sns correlation heatmaps
 def corr_cmap():
     return sns.diverging_palette(220, 10, as_cmap=True)
-
-
-# Chinese restaurant process
-def crp(n, alpha=1):
-    tables = []
-    n_at_tables = []
-    n_of_tables = 0
-    for i in range(n):
-        p = [x / (i + alpha) for x in n_at_tables + [alpha]]
-        # p.append(1 - sum(p))
-        table_choice = np.random.choice(n_of_tables + 1, p=p)
-        if table_choice == n_of_tables:
-            tables.append([i])
-            n_at_tables.append(1)
-            n_of_tables += 1
-        else:
-            tables[table_choice].append(i)
-            n_at_tables[table_choice] += 1
-    return tables
-
-
-# Use KDE method to estimate a pdf with bandwidth determined by CV20 grid search
-def est_pdf(x, x_grid, bws=np.linspace(0.1, 1.0, 30), cv=20):
-    grid = GridSearchCV(KernelDensity(), {'bandwidth': bws}, cv=cv)
-    grid.fit(x[:, None])
-    # print(grid.best_params_)
-    kde = grid.best_estimator_
-    pdf = np.exp(kde.score_samples(x_grid[:, None]))
-    return pdf
