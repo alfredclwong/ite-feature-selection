@@ -9,21 +9,35 @@ from tqdm import tqdm
 
 display_stuff = False
 save_stuff = True
-headers = 'E[Y0] E[Y1] ATE CATT CATC Var[Y0] Var[Y1]'.split()
+headers = 'E[Y0] E[Y1] ATE CATT CATC Var[Y0] Var[Y1] E[Y0|T=0] E[Y0|T=1] E[Y1|T=0] E[Y1|T=1]'.split()
 descs = 'true pred base'.split()
 
 
 def report(Ys, T):
-    result = np.zeros((len(Ys), 7))
+    n_treatments = int(np.max(T)) + 1
+    assert n_treatments == 2
+    result = np.zeros((len(Ys), len(headers)))
     for i, Y in enumerate(Ys):
         means = np.mean(Y, axis=0)
-        catt = np.mean(Y[T == 1, 1]) - np.mean(Y[T == 1, 0])
-        catc = np.mean(Y[T == 0, 1]) - np.mean(Y[T == 0, 0])
+        ate_naive = means[1] - means[0]
+
+        # Compute E[Y(yt)|T=t]
+        EYcT = np.zeros((n_treatments, n_treatments))
+        for yt in range(n_treatments):
+            for t in range(n_treatments):
+                EYcT[yt, t] = np.mean(Y[T == t, yt])
+        catt = EYcT[1, 1] - EYcT[0, 1]
+        catc = EYcT[1, 0] - EYcT[0, 0]
+
         result[i, 0:2] = means
-        result[i, 2] = means[1] - means[0]
+        result[i, 2] = ate_naive
         result[i, 3] = catt
         result[i, 4] = catc
         result[i, 5:7] = np.var(Y, axis=0)
+        result[i, 7] = EYcT[0, 0]
+        result[i, 8] = EYcT[0, 1]
+        result[i, 9] = EYcT[1, 0]
+        result[i, 10] = EYcT[1, 1]
     return result
 
 
@@ -63,7 +77,7 @@ if display_stuff:
     plt.show()
 
 default_env(gpu=True)
-n_trials = 1000 * len(descs)
+n_trials = len(descs) * 1000
 progress = 0
 results = np.zeros((n_trials, len(headers)))
 results_path = 'results/2-direct.csv'
@@ -74,13 +88,12 @@ try:
     if progress < n_trials:
         results[:progress] = _results
         raise IndexError
-    results = _results
 except (IOError, IndexError):
     for i in tqdm(range(progress, n_trials, len(descs))):
         Y, beta = get_ihdp_Yb(X, T, 'B1')
         Yf = Y[np.arange(n), T]
 
-        invases = [Invase(n_features, n_classes=0, lam=1) for t in range(n_treatments)]
+        invases = [Invase(n_features, n_classes=0, lam=2) for t in range(n_treatments)]
         Y_pred = np.zeros((n, n_treatments))
         Y_base = np.zeros((n, n_treatments))
         for t in range(n_treatments):
@@ -99,3 +112,6 @@ except (IOError, IndexError):
             df.iloc[j:i+len(descs):len(descs), -1] = desc
         if save_stuff:
             df.to_csv(results_path)
+
+results = pd.read_csv(results_path, index_col=0)
+print(results.groupby('desc').mean())
