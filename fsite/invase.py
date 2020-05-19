@@ -9,9 +9,9 @@ from tqdm import tqdm
 eps = 1e-8
 
 default_hyperparams = {
-    'h_layers_pred':    2,
+    'h_layers_pred':    1,
     'h_dim_pred':       lambda x: 100,  # noqa 272
-    'h_layers_base':    2,
+    'h_layers_base':    1,
     'h_dim_base':       lambda x: 100,  # noqa 272
     'h_layers_sel':     1,
     'h_dim_sel':        lambda x: 2*x,  # noqa 272
@@ -21,7 +21,7 @@ default_hyperparams = {
 
 
 class Invase:
-    def __init__(self, n_features, n_classes, lam, hyperparams=default_hyperparams, verbose=True):
+    def __init__(self, n_features, n_classes, lam, hyperparams=default_hyperparams):
         self.n_features = n_features
         self.n_classes = n_classes  # 0 = regression, 2+ = classification
         pred_base_loss = 'categorical_crossentropy' if self.n_classes else 'mse'
@@ -105,7 +105,7 @@ class Invase:
         return Model(X, S)
 
     def train(self, X, Y, n_iters, X_test=None, Y_test=None, S_true=None,
-              batch_size=1024, verbose=True, save_history=True):
+              batch_size=1024, verbose=True, save_history=False):
         # Check array dims. If Y is a class vector (e.g. [0, 1, 2, 0]) then change it to one-hot encoding
         test = X_test is not None and Y_test is not None
         if self.n_classes and (len(Y.shape) == 1 or Y.shape[1] == 1):
