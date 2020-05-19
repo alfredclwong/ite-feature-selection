@@ -7,10 +7,21 @@ from utils.utils import default_env
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
+hyperparams = {
+    'h_layers_pred':    1,
+    'h_dim_pred':       lambda x: 100,  # noqa 272
+    'h_layers_base':    1,
+    'h_dim_base':       lambda x: 100,  # noqa 272
+    'h_layers_sel':     1,
+    'h_dim_sel':        lambda x: 100,  # noqa 272
+    'optimizer':        'adam'
+}
 display_stuff = False
 save_stuff = True
+results_path = 'results/2-direct.csv'
 headers = 'E[Y0] E[Y1] ATE CATT CATC Var[Y0] Var[Y1] E[Y0|T=0] E[Y0|T=1] E[Y1|T=0] E[Y1|T=1]'.split()
 descs = 'true pred base'.split()
+n_trials = len(descs) * 1000
 
 
 def report(Ys, T):
@@ -77,10 +88,8 @@ if display_stuff:
     plt.show()
 
 default_env(gpu=True)
-n_trials = len(descs) * 1000
 progress = 0
 results = np.zeros((n_trials, len(headers)))
-results_path = 'results/2-direct.csv'
 try:
     _results = pd.read_csv(results_path, index_col=0).values[:, :-1]
     assert(_results.shape[1] == results.shape[1])
@@ -93,14 +102,14 @@ except (IOError, IndexError):
         Y, beta = get_ihdp_Yb(X, T, 'B1')
         Yf = Y[np.arange(n), T]
 
-        invases = [Invase(n_features, n_classes=0, lam=2) for t in range(n_treatments)]
+        invases = [Invase(n_features, 0, 2, hyperparams) for t in range(n_treatments)]
         Y_pred = np.zeros((n, n_treatments))
         Y_base = np.zeros((n, n_treatments))
         for t in range(n_treatments):
             Xt = X[T == t]
             Yft = Yf[T == t]
             X_train, X_test, Y_train, Y_test = train_test_split(Xt, Yft, test_size=.2)
-            invases[t].train(X_train, Y_train, 1000, X_test, Y_test, verbose=False, save_history=False)  # , S_true=(beta > 0))
+            invases[t].train(X_train, Y_train, 1000, X_test, Y_test, verbose=False, save_history=False)
             print(np.array2string(beta, formatter={'float_kind': '{0:.2f}'.format}))
             Y_pred[:, t] = invases[t].predict(X).flatten()
             Y_base[:, t] = invases[t].predict(X, use_baseline=True).flatten()
