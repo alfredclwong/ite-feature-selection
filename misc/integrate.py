@@ -29,7 +29,8 @@ plt.plot(xs, test3(0, 0, xs))
 plt.show()
 '''
 
-#Il = quad(l, -np.inf, np.inf)[0]
+Il = quad(l, -np.inf, np.inf)[0]
+print(Il * np.sqrt(2/np.pi))
 Ir = tplquad(r, -np.inf, np.inf, -np.inf, np.inf, -np.inf, np.inf)[0]
 print(Ir / np.sqrt(2*np.pi**3))
 Ir0 = tplquad(r0, -np.inf, np.inf, -np.inf, np.inf, -np.inf, np.inf)[0]
