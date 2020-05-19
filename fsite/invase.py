@@ -1,4 +1,5 @@
 from keras.layers import Dense, Input, Multiply, Concatenate
+from keras.regularizers import l2
 from keras.models import Model
 from keras.utils import to_categorical
 import keras.backend as K
@@ -82,8 +83,8 @@ class Invase:
         X = Input((self.n_features,))
         H = X
         for _ in range(h_layers):
-            H = Dense(h_dim, activation='relu')(X)
-        y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
+            H = Dense(h_dim, activation='relu', kernel_regularizer=l2())(X)
+        y = Dense(self.n_classes, activation='softmax', kernel_regularizer=l2())(H) if self.n_classes else Dense(1)(H)
         return Model(X, y)
 
     def __build_predictor(self, h_layers, h_dim):
@@ -92,16 +93,16 @@ class Invase:
         H = Multiply()([X, s])         # suppressed
         H = Concatenate()([H, s])      # concatenated for distinguishing suppressed features from 0-valued features
         for _ in range(h_layers):
-            H = Dense(h_dim, activation='relu')(H)
-        y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
+            H = Dense(h_dim, activation='relu', kernel_regularizer=l2())(H)
+        y = Dense(self.n_classes, activation='softmax', kernel_regularizer=l2())(H) if self.n_classes else Dense(1)(H)
         return Model([X, s], y)
 
     def __build_selector(self, h_layers, h_dim):
         X = Input((self.n_features,))
         H = X
         for _ in range(h_layers):
-            H = Dense(h_dim, activation='relu')(H)
-        S = Dense(self.n_features, activation='sigmoid')(H)  # selection probability vector
+            H = Dense(h_dim, activation='relu', kernel_regularizer=l2())(H)
+        S = Dense(self.n_features, activation='sigmoid', kernel_regularizer=l2())(H)  # selection probability vector
         return Model(X, S)
 
     def train(self, X, Y, n_iters, X_test=None, Y_test=None, S_true=None,
