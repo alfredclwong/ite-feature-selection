@@ -4,6 +4,9 @@ import os
 import seaborn as sns
 from sklearn.model_selection import GridSearchCV
 from sklearn.neighbors import KernelDensity
+import tensorflow as tf
+from tensorflow.python.client import device_lib
+import re
 
 
 # n-width mean filter
@@ -18,13 +21,25 @@ def param_search(params):
 
 
 def default_env(gpu=False):
-    if not gpu:
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # suppress warnings
-        os.environ['CUDA_VISIBLE_DEVICES'] = ''   # disable GPU
     np.set_printoptions(
             linewidth=160,
             formatter={'float_kind': lambda x: f'{x:.4f}'},
-            )
+    )
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'      # suppress warnings
+    if gpu:
+        gpu_device_name = tf.test.gpu_device_name()
+        if gpu_device_name:
+            for device_attributes in device_lib.list_local_devices():
+                if device_attributes.name == gpu_device_name:
+                    d = device_attributes.physical_device_desc
+                    name = re.search('(?<=name: )[\w\s]+', d).group()
+                    print(f'Loaded GPU: {name}')
+                    break
+
+        else:
+            print('Please install GPU version of TF')
+    else:
+        os.environ['CUDA_VISIBLE_DEVICES'] = ''   # disable GPU
 
 
 # Nice colormap for sns correlation heatmaps
