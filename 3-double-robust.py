@@ -2,10 +2,11 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from itertools import product
+import matplotlib.pyplot as plt
 
 from fsite.invase import Invase
 from data.synthetic_data import get_ihdp_XT, get_ihdp_Yb
-from utils.utils import XTY_split, default_env
+from utils.utils import XTY_split, default_env, est_pdf
 
 hyperparams_shallow = {
     'h_layers_pred':    1,
@@ -69,6 +70,7 @@ X, T = get_ihdp_XT()
 n, n_features = X.shape
 n_treatments = np.max(T) + 1
 
+# TODO make a generic, less memory-intensive implementation of progress saving already
 progress = 0
 results = np.zeros((n_trials, len(headers) * len(subheaders)))
 try:
@@ -78,9 +80,34 @@ try:
     if progress < n_trials:
         results[:progress] = _results
         raise IndexError
+    results = _results
 except (IOError, IndexError):
     for i in tqdm(range(progress, n_trials)):
         results[i] = trial(X, T).flatten()
         df = pd.DataFrame(results[:i+1], columns=columns)
         if save_stuff:
             df.to_csv(results_path)
+
+print('\t'.join(columns))
+print('\t'.join(map(str, np.mean(results, axis=0).round(8))))
+mae = np.array(results)
+mae[:, ::2] -= results[:, 0, None]
+mae[:, 1::2] -= results[:, 1, None]
+mae = np.mean(np.abs(mae), axis=0)
+print('\t'.join(map(lambda x: f'{str(x)}\t' if x == 0 else str(x), mae.round(8))))
+
+plt.figure(figsize=(4, 2.5))
+x_grid = np.linspace(0, 20, 100)
+for i in range(len(columns)):
+    if 'naive' in columns[i]:
+        continue
+    pdf = est_pdf(results[:, i], x_grid)
+    plt.plot(x_grid, pdf)
+plt.legend(list(filter(lambda s: 'naive' not in s, columns)))
+plt.xlabel('Estimate')
+plt.ylabel('Probability')
+plt.xlim([np.min(x_grid), np.max(x_grid)])
+plt.ylim(bottom=0)
+if save_stuff:
+    plt.savefig('../iib-diss/3-doubly-robust.pdf', bbox_inches='tight')
+plt.show()
