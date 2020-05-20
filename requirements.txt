@@ -1,5 +1,6 @@
 future==0.18.2
 graphviz==0.14
+imbalanced-learn==0.6.2
 Keras==2.3.1
 Keras-Applications==1.0.8
 Keras-Preprocessing==1.1.0
