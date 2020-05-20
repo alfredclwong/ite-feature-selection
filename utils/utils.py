@@ -7,6 +7,8 @@ from sklearn.neighbors import KernelDensity
 import tensorflow as tf
 from tensorflow.python.client import device_lib
 import re
+import pandas as pd
+from tqdm import tqdm
 
 
 # Chinese restaurant process
@@ -63,6 +65,22 @@ def XTY_split(X, T, Y, test_size=.2):
     train_idxs[test_idxs] = 0
 
     return X[train_idxs], X[test_idxs], T[train_idxs], T[test_idxs], Y[train_idxs], Y[test_idxs]
+
+
+# Progress saving and loading for long experiments
+def continue_experiment(results_path, n_trials, trial_fn, columns=None):
+    # Check progress. Number of rows (0-indexed) = number of trials already done, because of header
+    progress = 0
+    try:
+        with open(results_path) as csv:
+            for (progress, _) in enumerate(csv):
+                pass
+    except IOError:
+        df = pd.DataFrame(columns=columns)
+        df.to_csv(results_path)
+    for i in tqdm(range(progress, n_trials), initial=progress, total=n_trials):
+        df = pd.DataFrame(trial_fn().reshape(1, -1))
+        df.to_csv(results_path, mode='a', header=False)
 
 
 # n-width mean filter

@@ -1,12 +1,11 @@
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 from itertools import product
 import matplotlib.pyplot as plt
 
 from fsite.invase import Invase
 from data.synthetic_data import get_ihdp_XT, get_ihdp_Yb
-from utils.utils import XTY_split, default_env, est_pdf
+from utils.utils import XTY_split, default_env, est_pdf, continue_experiment
 
 hyperparams_shallow = {
     'h_layers_pred':    1,
@@ -26,12 +25,12 @@ hyperparams_deep = {
     'h_dim_sel':        lambda x: 100,  # noqa 272
     'optimizer':        'adam'
 }
-save_stuff = True
+save_stuff = False
 headers = 'true naive regr ipw aipw'.split()
 subheaders = 'E[Y0] E[Y1]'.split()
 columns = [f'{a} {b}' for a, b in product(headers, subheaders)]
-n_trials = 1000
 results_path = 'results/3-double-robust.csv'
+n_trials = 1000
 
 
 def trial(X, T):
@@ -43,13 +42,13 @@ def trial(X, T):
     invases = {'prop': Invase(n_features, n_treatments, 0.1, hyperparams_shallow)}
     for t in range(n_treatments):
         invases[t] = Invase(n_features, 0, 2, hyperparams_deep)
-    invases['prop'].train(X_train, T_train, 500, X_test, T_test, verbose=False)
+    invases['prop'].train(X_train, T_train, 50, X_test, T_test, verbose=False)
     prop_scores = invases['prop'].predict(X)
     Y_pred = np.zeros(Y.shape)
     for t in range(n_treatments):
         train_idxs = T_train == t
         test_idxs = T_test == t
-        invases[t].train(X_train[train_idxs], Y_train[train_idxs], 1000,
+        invases[t].train(X_train[train_idxs], Y_train[train_idxs], 100,
                          X_test[test_idxs], Y_test[test_idxs], verbose=False)
         Y_pred[:, t] = invases[t].predict(X).flatten()
 
@@ -69,24 +68,9 @@ default_env(gpu=True)
 X, T = get_ihdp_XT()
 n, n_features = X.shape
 n_treatments = np.max(T) + 1
-
-# TODO make a generic, less memory-intensive implementation of progress saving already
-progress = 0
-results = np.zeros((n_trials, len(headers) * len(subheaders)))
-try:
-    _results = pd.read_csv(results_path, index_col=0).values
-    assert(_results.shape[1] == results.shape[1])
-    progress = _results.shape[0]
-    if progress < n_trials:
-        results[:progress] = _results
-        raise IndexError
-    results = _results
-except (IOError, IndexError):
-    for i in tqdm(range(progress, n_trials)):
-        results[i] = trial(X, T).flatten()
-        df = pd.DataFrame(results[:i+1], columns=columns)
-        if save_stuff:
-            df.to_csv(results_path)
+if save_stuff:
+    continue_experiment(results_path, n_trials, lambda: trial(X, T), columns)
+results = pd.read_csv(results_path, index_col=0).values
 
 print('\t'.join(columns))
 print('\t'.join(map(str, np.mean(results, axis=0).round(8))))
@@ -96,18 +80,18 @@ mae[:, 1::2] -= results[:, 1, None]
 mae = np.mean(np.abs(mae), axis=0)
 print('\t'.join(map(lambda x: f'{str(x)}\t' if x == 0 else str(x), mae.round(8))))
 
-plt.figure(figsize=(4, 2.5))
-x_grid = np.linspace(0, 20, 100)
-for i in range(len(columns)):
-    if 'naive' in columns[i]:
-        continue
-    pdf = est_pdf(results[:, i], x_grid)
-    plt.plot(x_grid, pdf)
-plt.legend(list(filter(lambda s: 'naive' not in s, columns)))
-plt.xlabel('Estimate')
-plt.ylabel('Probability')
-plt.xlim([np.min(x_grid), np.max(x_grid)])
-plt.ylim(bottom=0)
-if save_stuff:
-    plt.savefig('../iib-diss/3-doubly-robust.pdf', bbox_inches='tight')
-plt.show()
+# plt.figure(figsize=(4, 2.5))
+# x_grid = np.linspace(0, 20, 100)
+# for i in range(len(columns)):
+#     if 'naive' in columns[i]:
+#         continue
+#     pdf = est_pdf(results[:, i], x_grid)
+#     plt.plot(x_grid, pdf)
+# plt.legend(list(filter(lambda s: 'naive' not in s, columns)))
+# plt.xlabel('Estimate')
+# plt.ylabel('Probability')
+# plt.xlim([np.min(x_grid), np.max(x_grid)])
+# plt.ylim(bottom=0)
+# if save_stuff:
+#     plt.savefig('../iib-diss/3-doubly-robust.pdf', bbox_inches='tight')
+# plt.show()
