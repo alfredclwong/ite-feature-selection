@@ -112,7 +112,6 @@ class Invase:
         if imbalanced:
             sm = SMOTE()
             X, Y = sm.fit_resample(X, Y)
-            imbalanced = False
         if self.n_classes and (len(Y.shape) == 1 or Y.shape[1] == 1):
             Y = to_categorical(Y, num_classes=self.n_classes)
             if test:
@@ -132,18 +131,8 @@ class Invase:
         } if h_iters else None
 
         # Train
-        if imbalanced:  # TODO decide between undersampling and SMOTE (probably SMOTE)
-            assert self.n_classes > 0
-            n_per_class = [i * batch_size // self.n_classes for i in range(self.n_classes + 1)]
-            idxs_by_class = [np.where(Y[:, i])[0] for i in range(self.n_classes)]
         for it in tqdm(range(1, 1+n_iters)):
-            if imbalanced:
-                idx = np.zeros(batch_size, dtype=int)
-                for i in range(self.n_classes):
-                    size = n_per_class[i+1] - n_per_class[i]
-                    idx[n_per_class[i]:n_per_class[i+1]] = np.random.choice(idxs_by_class[i], size=size)
-            else:
-                idx = np.random.randint(n, size=batch_size)                   # random batch
+            idx = np.random.randint(n, size=batch_size)                       # random batch
             S = np.nan_to_num(self.selector.predict(X[idx]))                  # selector probs
             s = np.random.binomial(1, S, size=(batch_size, self.n_features))  # sample from S
 
