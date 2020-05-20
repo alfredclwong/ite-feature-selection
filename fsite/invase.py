@@ -5,6 +5,7 @@ from keras.utils import to_categorical
 import keras.backend as K
 import numpy as np
 from tqdm import tqdm
+from imblearn.over_sampling import SMOTE
 
 
 eps = 1e-8
@@ -16,7 +17,6 @@ default_hyperparams = {
     'h_dim_base':       lambda x: 100,  # noqa 272
     'h_layers_sel':     1,
     'h_dim_sel':        lambda x: 2*x,  # noqa 272
-#    'lam':              0.1,
     'optimizer':        'adam'
 }
 
@@ -84,7 +84,7 @@ class Invase:
         H = X
         for _ in range(h_layers):
             H = Dense(h_dim, activation='relu', kernel_regularizer=l2())(X)
-        y = Dense(self.n_classes, activation='softmax', kernel_regularizer=l2())(H) if self.n_classes else Dense(1)(H)
+        y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
         return Model(X, y)
 
     def __build_predictor(self, h_layers, h_dim):
@@ -94,7 +94,7 @@ class Invase:
         H = Concatenate()([H, s])      # concatenated for distinguishing suppressed features from 0-valued features
         for _ in range(h_layers):
             H = Dense(h_dim, activation='relu', kernel_regularizer=l2())(H)
-        y = Dense(self.n_classes, activation='softmax', kernel_regularizer=l2())(H) if self.n_classes else Dense(1)(H)
+        y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
         return Model([X, s], y)
 
     def __build_selector(self, h_layers, h_dim):
@@ -102,13 +102,17 @@ class Invase:
         H = X
         for _ in range(h_layers):
             H = Dense(h_dim, activation='relu', kernel_regularizer=l2())(H)
-        S = Dense(self.n_features, activation='sigmoid', kernel_regularizer=l2())(H)  # selection probability vector
+        S = Dense(self.n_features, activation='sigmoid')(H)  # selection probability vector
         return Model(X, S)
 
     def train(self, X, Y, n_iters, X_test=None, Y_test=None, S_true=None,
-              batch_size=1024, verbose=True, save_history=False):
+              batch_size=1024, verbose=True, save_history=False, imbalanced=False):
         # Check array dims. If Y is a class vector (e.g. [0, 1, 2, 0]) then change it to one-hot encoding
         test = X_test is not None and Y_test is not None
+        if imbalanced:
+            sm = SMOTE()
+            X, Y = sm.fit_resample(X, Y)
+            imbalanced = False
         if self.n_classes and (len(Y.shape) == 1 or Y.shape[1] == 1):
             Y = to_categorical(Y, num_classes=self.n_classes)
             if test:
@@ -128,8 +132,18 @@ class Invase:
         } if h_iters else None
 
         # Train
+        if imbalanced:  # TODO decide between undersampling and SMOTE (probably SMOTE)
+            assert self.n_classes > 0
+            n_per_class = [i * batch_size // self.n_classes for i in range(self.n_classes + 1)]
+            idxs_by_class = [np.where(Y[:, i])[0] for i in range(self.n_classes)]
         for it in tqdm(range(1, 1+n_iters)):
-            idx = np.random.randint(n, size=batch_size)                       # random batch
+            if imbalanced:
+                idx = np.zeros(batch_size, dtype=int)
+                for i in range(self.n_classes):
+                    size = n_per_class[i+1] - n_per_class[i]
+                    idx[n_per_class[i]:n_per_class[i+1]] = np.random.choice(idxs_by_class[i], size=size)
+            else:
+                idx = np.random.randint(n, size=batch_size)                   # random batch
             S = np.nan_to_num(self.selector.predict(X[idx]))                  # selector probs
             s = np.random.binomial(1, S, size=(batch_size, self.n_features))  # sample from S
 
@@ -213,7 +227,7 @@ class Invase:
 
     def predict_features(self, X, threshold=0.5):
         S = self.selector.predict(X)
-        if threshold is None:
+        if threshold is None or threshold is False:
             return S
         s = S > threshold
         return s
