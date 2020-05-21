@@ -21,7 +21,8 @@ def get_ihdp_npci(small=False, val=True):
     arrays = 'x t yf ycf'.split()
     data = {f: np.load(f'data/ihdp/ihdp_npci_1-{n_trials}.{f}.npz') for f in files}
     for i in range(n_trials):
-        row = {f: [data[f][a].take(i, axis=-1) for a in arrays] for f in files}
+        row = {f: [data[f][a].take(i, axis=-1).astype(int) if a == 't' else
+                   data[f][a].take(i, axis=-1) for a in arrays] for f in files}
         if val:
             split = [471, 201]
             idx = np.ones(sum(split), dtype=bool)
