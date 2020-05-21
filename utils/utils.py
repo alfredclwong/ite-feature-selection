@@ -9,6 +9,8 @@ from tensorflow.python.client import device_lib
 import re
 import pandas as pd
 from tqdm import tqdm
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
 
 
 # Chinese restaurant process
@@ -65,6 +67,14 @@ def XTY_split(X, T, Y, test_size=.2):
     train_idxs[test_idxs] = 0
 
     return X[train_idxs], X[test_idxs], T[train_idxs], T[test_idxs], Y[train_idxs], Y[test_idxs]
+
+
+def high_dim_vis(X, T):
+    n_treatments = T.max() + 1
+    X_embedded = TSNE().fit_transform(X)
+    for t in range(n_treatments):
+        plt.scatter(X_embedded[T == t, 0], X_embedded[T == t, 1])
+    plt.show()
 
 
 # Progress saving and loading for long experiments
