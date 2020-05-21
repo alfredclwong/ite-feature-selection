@@ -15,6 +15,22 @@ def synthetic_data(csv_path=None, N=20000, n_features=11, n_treatments=2, models
     return X, T, Y, S
 
 
+def get_ihdp_npci(small=False, val=True):
+    n_trials = 100 if small else 1000
+    files = 'train test'.split()
+    arrays = 'x t yf ycf'.split()
+    data = {f: np.load(f'data/ihdp/ihdp_npci_1-{n_trials}.{f}.npz') for f in files}
+    for i in range(n_trials):
+        row = {f: [data[f][a].take(i, axis=-1) for a in arrays] for f in files}
+        if val:
+            split = [471, 201]
+            idx = np.ones(sum(split), dtype=bool)
+            idx[np.random.choice(sum(split), split[0], replace=False)] = 0
+            row['val'] = [a[idx] for a in row['train']]
+            row['train'] = [a[~idx] for a in row['train']]
+        yield row
+
+
 def get_ihdp_XT():
     data = pd.read_csv('data/ihdp.csv', index_col=0).values
     assert data.shape == (985, 29)
