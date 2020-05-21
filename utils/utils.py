@@ -69,6 +69,16 @@ def XTY_split(X, T, Y, test_size=.2):
     return X[train_idxs], X[test_idxs], T[train_idxs], T[test_idxs], Y[train_idxs], Y[test_idxs]
 
 
+# Piece together T, Yf and Ycf to get Y
+def make_Y(T, Yf, Ycf):
+    assert T.max() == 1
+    n = Yf.shape[0]
+    Y = np.zeros((n, 2))
+    Y[np.arange(n), T] = Yf
+    Y[np.arange(n), 1-T] = Ycf
+    return Y
+
+
 def high_dim_vis(X, T):
     n_treatments = T.max() + 1
     X_embedded = TSNE().fit_transform(X)
