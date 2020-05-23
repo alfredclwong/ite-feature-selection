@@ -11,6 +11,27 @@ import pandas as pd
 from tqdm import tqdm
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
+import keras.backend as K
+
+
+# Ironically this is actually a metric, sort of
+def mmd2(R, T, sigma=None, keras=True):
+    if sigma is None:
+        sigma = 1
+    if not keras:
+        R, T = map(K.constant, [R, T])
+
+    def k(x, y):
+        return K.exp(-(K.sum(K.square(x), axis=-1, keepdims=True)
+                     + K.transpose(K.sum(K.square(y), axis=-1, keepdims=True))
+                     - 2 * x @ K.transpose(y)) / K.square(K.cast(sigma, 'float32')) / 2.0)
+    n0 = K.sum(1-T)
+    n1 = K.sum(T)
+    kernel = k(R, R)
+    pos0, pos1 = map(lambda t: tf.tensordot(t, t, axes=0), [T, 1-T])
+    pos0, pos1, neg = map(lambda m: m-m*K.eye(n0+n1), [pos0, pos1, 1-pos0-pos1])
+    mmd2 = K.sum(kernel*pos0)/K.sum(pos0) + K.sum(kernel*pos1)/K.sum(pos1) - K.sum(kernel*neg)/K.sum(neg)
+    return mmd2 if keras else K.eval(mmd2)
 
 
 # Chinese restaurant process

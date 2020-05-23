@@ -7,17 +7,17 @@ import keras.backend as K
 from tqdm import tqdm
 import tensorflow as tf
 from utils.metrics import PEHE
-from utils.utils import make_Y
+from utils.utils import make_Y, mmd2
 # from imblearn.over_sampling import SMOTE
 
 default_hyperparams = {
     'alpha':            0,   # tradeoff between factual loss and IPM (more alpha = more IPM loss)
-    'sigma':            0.5,    # for Gaussian RBF kernel
-    'rep_h_layers':     1,     #
-    'rep_h_dim':        50,    #
-    'rep_dim':          50,   #
-    'pred_h_layers':    1,     #
-    'pred_h_dim':       50,   #
+    'sigma':            1,    # for Gaussian RBF kernel
+    'rep_h_layers':     3,     #
+    'rep_h_dim':        200,    #
+    'rep_dim':          100,   #
+    'pred_h_layers':    3,     #
+    'pred_h_dim':       100,   #
     'batch_size':       100,   #
     'learning_rate':    1e-3,  #
     'reg_penalty':      1e-4,  # TODO
@@ -57,23 +57,6 @@ class CfrNet():
         Yt = TYt[:, 1:]
         return K.square(Yt - Yt_pred) / K.sum(T)
 
-    def mmd2(self, R, T):
-        def k(x, y):
-            return K.exp(-(K.sum(K.square(x), axis=-1, keepdims=True)
-                         + K.transpose(K.sum(K.square(y), axis=-1, keepdims=True))
-                         - 2 * x @ K.transpose(y)) / K.square(self.sigma))
-        n0 = K.sum(1-T)
-        n1 = K.sum(T)
-        kernel = k(R, R)
-        pos = K.concatenate([
-                K.concatenate([K.ones((n0, n0), dtype='int32'), K.zeros((n0, n1), dtype='int32')], axis=1),
-                K.concatenate([K.zeros((n1, n0), dtype='int32'), K.ones((n1, n1), dtype='int32')], axis=1)],
-                axis=0) - K.eye(n0 + n1, dtype='int32')
-        neg = 1 - pos - K.eye(n0 + n1, dtype='int32')
-        mmd2 = K.mean(K.gather(kernel, pos)) - K.mean(K.gather(kernel, neg))
-        # mmd2 = K.sum(kernel * pos) / (n0*(n0-1) + n1*(n1-1)) - K.sum(kernel * neg) / n0 / n1
-        return mmd2
-
     def train(self, X, T, Yf, n_iters, Ycf=None, val_data=None, test_data=None, verbose=False, save_history=False):
         n = X.shape[0]
         if Ycf is not None:
@@ -96,7 +79,7 @@ class CfrNet():
         self.cfr.compile(
             Adam(1e-4),
             loss={
-                'R': lambda Tb, Rb_pred: self.mmd2(Rb_pred, Tb),
+                'R': lambda Tb, Rb_pred: mmd2(Rb_pred, Tb, self.sigma),
                 'Y0': lambda TY0b, Y0b_pred: self.factual_loss(TY0b, Y0b_pred),
                 'Y1': lambda TY1b, Y1b_pred: self.factual_loss(TY1b, Y1b_pred),
             },
@@ -141,6 +124,7 @@ class CfrNet():
                 continue
 
             obj, imb, _, _ = cfr_loss
+            # obj = imb = cfr_loss
             if self.alpha != 0:
                 imb /= self.alpha
             Y_pred = self.predict(X)
