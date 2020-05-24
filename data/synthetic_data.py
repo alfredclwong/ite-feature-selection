@@ -3,13 +3,14 @@ import numpy as np
 from scipy.special import expit
 
 
-def synthetic_data(csv_path=None, N=20000, n_features=11, n_treatments=2, models=None, corr=False, noiseX=False, noiseY=False):
+def synthetic_data(csv_path=None, N=20000, n_features=11, n_treatments=2, models=None,
+                   corr=False, noiseX=False, noiseY=False, binary=True):
     assert n_features >= 10
     if models:
         n_treatments = len(models)
     X = get_X(csv_path, N, n_features, corr)
     T = get_T(X, n_treatments)
-    Y, S = get_YS(X, n_treatments, models, noise=noiseY)
+    Y, S = get_YS(X, n_treatments, models, noise=noiseY, binary=binary)
     if noiseX:
         X += .5 * np.random.standard_normal(X.shape)
     return X, T, Y, S
@@ -129,7 +130,7 @@ def get_model(i):
     elif i == 3:
         # X_7 can dominate if the coefficient is too high (100 in L2X, 10 in INVASE, 5 => 100%)
         def model(X):
-            Y = - 5 * np.sin(2 * X[:, 6]) + 2 * np.abs(X[:, 7]) + X[:, 8] + np.exp(-X[:, 9])
+            Y = - 10 * np.sin(2 * X[:, 6]) + 2 * np.abs(X[:, 7]) + X[:, 8] + np.exp(-X[:, 9])
             S = np.zeros(X.shape)
             S[:, 6:10] = 1
             return Y, S
