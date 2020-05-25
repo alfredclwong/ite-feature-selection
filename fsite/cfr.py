@@ -8,18 +8,20 @@ from utils.metrics import PEHE
 from utils.utils import make_Y
 from utils.loss import mmd2, factual
 # from imblearn.over_sampling import SMOTE
+from tqdm import tqdm
 
 default_batch_size = 100
 default_hyperparams = {
-    'alpha':            1e-1,      # tradeoff between factual loss and IPM (more alpha = more IPM loss)
+    # 'alpha':            1e-1,      # tradeoff between factual loss and IPM (more alpha = more IPM loss)
+    'alpha':            1.0,      # tradeoff between factual loss and IPM (more alpha = more IPM loss)
     'sigma':            1.0,       # for Gaussian RBF kernel
     'rep_h_layers':     3,         #
     'rep_h_dim':        200,       #
     'rep_dim':          100,       #
     'pred_h_layers':    3,         #
     'pred_h_dim':       100,       #
-    'pred_lr':          1e-3,      #
-    'rep_lr':           1e-4,      #
+    'pred_lr':          1e-4,      #
+    'rep_lr':           1e-5,      #
     'pred_reg':         l2(1e-4),  #
     'activation':       'elu'      #
 }
@@ -103,6 +105,7 @@ class CfrNet():
             h_iters = n_iters // n_savepoints
 
         # TRAINING LOOP
+        # for it in tqdm(range(n_iters)):
         for it in range(n_iters):
             # Random (imbalanced) batch
             idx = np.random.choice(n, size=batch_size)
@@ -118,8 +121,8 @@ class CfrNet():
             # THE ACTUAL TRAINING HAPPENED HERE #
 
             # Report training progress
-            do_history = save_history and (it+1) % h_iters
-            do_verbose = (verbose and (it+1) % v_iters == 0) or it == 0 or (it+1) == n_iters
+            do_history = save_history and ((it+1) % h_iters == 0)
+            do_verbose = verbose and ((it+1) % v_iters == 0) or (it == 0) or ((it+1) == n_iters)
             if not do_history and not do_verbose:
                 continue
 
@@ -156,6 +159,7 @@ class CfrNet():
                     print(f'\tval {pehe_val:.4f}', end='')
                 if test:
                     print(f'\ttest {pehe_test:.4f}', end='')
+                print()
                 # print(f'\t{h0_cfr:.4f}\t{h1_cfr:.4f}')
 
         if save_history:
