@@ -7,7 +7,7 @@ def mmd2(R, T, sigma=1, tensor=True):
                       + tf.transpose(tf.reduce_sum(tf.square(y), axis=-1, keepdims=True))
                       - 2 * x @ tf.transpose(y)) / tf.square(tf.cast(sigma, 'float32')) / 2.0)
     if not tensor:
-        R, T = map(tf.constant, [R, T])
+        R, T = map(lambda x: tf.cast(x, 'float'), [R, T])
     ic = tf.where(T == 0)[:, 0]
     it = tf.where(T == 1)[:, 0]
     Rc = tf.gather(R, ic)
@@ -28,3 +28,11 @@ def factual(TYt, Yt_pred, t):
     Yt = TYt[:, 1]
     it = tf.where(T == t)[:, 0]
     return tf.reduce_mean(tf.square(tf.gather(Yt, it) - tf.gather(Yt_pred, it)))
+
+
+def weighted_factual(TYtwt, Yt_pred, t):
+    T = TYtwt[:, 0]
+    Yt = TYtwt[:, 1]
+    wt = TYtwt[:, 2]
+    it = tf.where(T == t)[:, 0]
+    return tf.reduce_mean(tf.gather(wt, it) * tf.square(tf.gather(Yt, it) - tf.gather(Yt_pred, it)))

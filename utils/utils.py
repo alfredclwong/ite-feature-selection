@@ -69,6 +69,12 @@ def XTY_split(X, T, Y, test_size=.2):
     return X[train_idxs], X[test_idxs], T[train_idxs], T[test_idxs], Y[train_idxs], Y[test_idxs]
 
 
+def pad_lr(X):
+    n = X.shape[0]
+    a = np.zeros((n, 1))
+    return np.hstack([a, X, a])
+
+
 # Piece together T, Yf and Ycf to get Y
 def make_Y(T, Yf, Ycf):
     assert T.max() == 1
