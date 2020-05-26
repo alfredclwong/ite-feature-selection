@@ -2,6 +2,7 @@ data/LBIDD/
 results/
 setup.cfg
 .vscode
+fsite/cfrnet/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

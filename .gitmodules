@@ -1,3 +1,0 @@
-[submodule "fsite/cfrnet"]
-	path = fsite/cfrnet
-	url = https://github.com/clinicalml/cfrnet.git
