@@ -24,8 +24,8 @@ class Test_Invase(unittest.TestCase):  # not really a proper unit test but the f
             Y_test = Y[:N_train]
             S_test = S[0, :N_train]
 
-            invase = Invase(n_features, n_classes=2)
-            invase.train(X_train, Y_train, 5000, X_test, Y_test, batch_size=512, save_history=False)
+            invase = Invase(n_features, n_classes=2, lam=0.1)
+            invase.train(X_train, Y_train, 5000, X_test, Y_test, batch_size=512, verbose=True)
             Y_pred = invase.predict(X_test)
             Y_base = invase.predict(X_test, use_baseline=True)
             S_pred = invase.predict_features(X_test)
