@@ -1,5 +1,5 @@
 import numpy as np
-from itertools import product
+from itertools import product, accumulate
 import os
 import seaborn as sns
 from sklearn.model_selection import GridSearchCV
@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 
 
 # Chinese restaurant process
-def crp(n, alpha=1):
+def crp(n, alpha=1, contiguous=False):
     tables = []
     n_at_tables = []
     n_of_tables = 0
@@ -29,6 +29,9 @@ def crp(n, alpha=1):
         else:
             tables[table_choice].append(i)
             n_at_tables[table_choice] += 1
+    if contiguous:
+        cum_lens = list(accumulate([len(x) for x in tables]))
+        tables = [list(range(a, b)) for a, b in list(zip([0] + cum_lens, cum_lens))]
     return tables
 
 

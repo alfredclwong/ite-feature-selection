@@ -18,7 +18,7 @@ lr = 1e-3
 reg = 1e-2
 
 
-class DrCfr:
+class OurNet:
     def __init__(self, n_features):
         self.nt, self.nc, self.ny = n_features
         assert self.nt + self.nc > 0 and self.nc + self.ny > 0

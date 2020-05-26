@@ -1,6 +1,22 @@
 import pandas as pd
 import numpy as np
 from scipy.special import expit
+from utils.utils import crp
+
+
+def partitioned_X(N, n_features, alpha=1, contiguous=False):
+    X = np.zeros((N, n_features))
+    partitions = crp(n_features, alpha, contiguous)
+    for partition in partitions:
+        size = len(partition)
+        if size == 1:
+            X[:, partition] = np.random.standard_normal((N, 1))
+        else:
+            mean = np.zeros(size)
+            S = np.random.uniform(-1, 1, size=(size, size))
+            cov = S.T @ S  # +ve semi def
+            X[:, partition] = np.random.multivariate_normal(mean, cov, size=N)
+    return X, partitions
 
 
 def synthetic_data(csv_path=None, N=20000, n_features=11, n_treatments=2, models=None,
@@ -31,6 +47,10 @@ def get_ihdp_npci(small=False, val=True):
             row['val'] = [a[idx] for a in row['train']]
             row['train'] = [a[~idx] for a in row['train']]
         yield row
+
+
+def get_ihdp_headers():
+    return pd.read_csv('data/ihdp.csv', index_col=0).columns[1:-3]
 
 
 def get_ihdp_XT():
@@ -89,7 +109,7 @@ def get_X(csv_path=None, N=10000, n_features=10, corr=False):
             S = np.random.uniform(-1, 1, size=(n_features, n_features))
             cov = S.T @ S  # +ve semi def
         else:
-            cov = np.diag(np.ones(n_features))
+            cov = np.eye(n_features)  # np.diag(np.ones(n_features))
         X = np.random.multivariate_normal(mean, cov, size=N)
     return X
 
@@ -117,7 +137,7 @@ def get_model(i):
     if i == 1:
         # soft XOR
         def model(X):
-            Y = X[:, 0] * X[:, 1] #*10
+            Y = X[:, 0] * X[:, 1]
             S = np.zeros(X.shape)
             S[:, :2] = 1
             return Y, S
@@ -130,7 +150,7 @@ def get_model(i):
     elif i == 3:
         # X_7 can dominate if the coefficient is too high (100 in L2X, 10 in INVASE, 5 => 100%)
         def model(X):
-            Y = - 10 * np.sin(2 * X[:, 6]) + 2 * np.abs(X[:, 7]) + X[:, 8] + np.exp(-X[:, 9])
+            Y = - np.sin(2 * X[:, 6]) + 2 * np.abs(X[:, 7]) + X[:, 8] + np.exp(-X[:, 9])
             S = np.zeros(X.shape)
             S[:, 6:10] = 1
             return Y, S
@@ -179,10 +199,16 @@ def get_model(i):
     return model
 
 
-def get_YS(X, n_treatments=2, models=None, binary=True, noise=False):
+def get_YS(X, n_treatments=2, models=None, binary=True, noise=False, permute=False):
     N, n_features = X.shape
     if not models:
         models = [t % 6 + 1 for t in range(n_treatments)]
+    if permute:
+        perm = np.random.choice(n_features, n_features, replace=False)
+        inv = [np.where(perm == p)[0][0] for p in range(n_features)]
+        print(perm)
+        print(inv)
+        X = X[:, perm]
 
     n_treatments = len(models)
     Y = np.zeros((N, n_treatments))
@@ -191,7 +217,10 @@ def get_YS(X, n_treatments=2, models=None, binary=True, noise=False):
         Y[:, t], S[t, :, :] = get_model(model)(X)
 
     if noise:
-        Y += np.random.standard_normal(size=Y.shape)
+        Y += np.random.standard_normal(size=Y.shape) * .5
     if binary:
         Y = np.random.binomial(1, p=expit(Y))
+    if permute:
+        X = X[:, inv]
+        S = S[:, :, inv]
     return Y, S
