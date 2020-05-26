@@ -21,50 +21,75 @@ reg = 1e-2
 class DrCfr:
     def __init__(self, n_features):
         self.nt, self.nc, self.ny = n_features
+        assert self.nt + self.nc > 0 and self.nc + self.ny > 0
 
+        # Build nets
         rep = self.build_rep(self.nc, 100, 2, rep_dim)
         h0 = self.build_pred(self.ny + rep_dim, 100, 2, 0)
         h1 = self.build_pred(self.ny + rep_dim, 100, 2, 1)
         prop = self.build_prop(self.nt + self.nc, 100, 2)
 
+        # Build graph, checking for zeros
         XT = Input((self.nt,))
         XC = Input((self.nc,))
         XY = Input((self.ny,))
-        XTC = Concatenate()([XT, XC])
-        T = prop(XTC)
-        R = rep(XC)
-        RXY = Concatenate()([R, XY])
-        Y0 = h0(RXY)
-        Y1 = h1(RXY)
-        self.prop = Model([XT, XC], T)
-        self.h0 = Model([XC, XY], Y0)
-        self.h1 = Model([XC, XY], Y1)
-        self.cfr = Model([XC, XY], [R, Y0, Y1])
+        if self.nt and self.nc:
+            XTC = Concatenate()([XT, XC])
+            T = prop(XTC)
+            self.prop = Model([XT, XC], T)
+        elif self.nt:
+            pass  # no need for weights
+        elif self.nc:
+            T = prop(XC)
+            self.prop = Model(XC, T)
+        if self.nc and self.ny:
+            R = rep(XC)
+            RXY = Concatenate()([R, XY])
+            Y0 = h0(RXY)
+            Y1 = h1(RXY)
+            self.h0 = Model([XC, XY], Y0)
+            self.h1 = Model([XC, XY], Y1)
+            self.cfr = Model([XC, XY], [R, Y0, Y1])
+        elif self.nc:
+            R = rep(XC)
+            Y0 = h0(R)
+            Y1 = h1(R)
+            self.h0 = Model(XC, Y0)
+            self.h1 = Model(XC, Y1)
+            self.cfr = Model(XC, [R, Y0, Y1])
+        elif self.ny:
+            Y0 = h0(XY)
+            Y1 = h1(XY)
+            self.h0 = Model(XY, Y0)
+            self.h1 = Model(XY, Y1)
+            pass  # no cfr model in this case
 
-        self.prop.compile(Adam(lr), 'binary_crossentropy')
+        # Compile models prop, h0, h1 and cfr
         self.h0.compile(Adam(lr), 'mse')
         self.h1.compile(Adam(lr), 'mse')
-        self.h0.trainable = False
-        self.h1.trainable = False
-        self.cfr.compile(
-            Adam(lr),
-            loss={
-                'rep': lambda T, R_pred: mmd2(R_pred, T, 1),
-                'h0': lambda TYw0, Y0_pred: weighted_factual(TYw0, Y0_pred, 0),
-                'h1': lambda TYw1, Y1_pred: weighted_factual(TYw1, Y1_pred, 1)
-            }, loss_weights={
-                'rep': alpha,
-                'h0': 1,
-                'h1': 1
-            })
+        if self.nc:
+            self.h0.trainable = False
+            self.h1.trainable = False
+            self.prop.compile(Adam(lr), 'binary_crossentropy')
+            self.cfr.compile(
+                Adam(lr),
+                loss={
+                    'rep': lambda T, R_pred: mmd2(R_pred, T, 1),
+                    'h0': lambda TYw0, Y0_pred: weighted_factual(TYw0, Y0_pred, 0),
+                    'h1': lambda TYw1, Y1_pred: weighted_factual(TYw1, Y1_pred, 1)
+                }, loss_weights={
+                    'rep': alpha,
+                    'h0': 1,
+                    'h1': 1
+                })
 
     def train(self, X, T, Yf, n_iters, batch_size=batch_size, Ycf=None,
               val_data=None, test_data=None, verbose=False, save_history=False):
         # Preprocess X: disentangle
-        XT = X[:, :self.nt]
-        XC = X[:, self.nt:-self.ny]
-        XY = X[:, -self.ny:]
         n = X.shape[0]
+        XT = X[:, :self.nt]
+        XC = X[:, self.nt:self.nt+self.nc]
+        XY = X[:, self.nt+self.nc:]
 
         # Preprocess T: get marginal propensity score
         pt = np.mean(T)
@@ -103,16 +128,35 @@ class DrCfr:
             idx = np.random.choice(n, size=batch_size)
             XTb, XCb, XYb, Tb, Yfb = map(lambda x: x[idx], [XT, XC, XY, T, Yf])
 
-            Tb_pred = self.prop.predict([XTb, XCb])
-            w0b = 1 + (1-pt)/pt * Tb_pred/(1-Tb_pred)
-            w1b = 1 + pt/(1-pt) * (1-Tb_pred)/Tb_pred
-            TYw0b = np.vstack([Tb, Yfb, w0b.flatten()]).T
-            TYw1b = np.vstack([Tb, Yfb, w1b.flatten()]).T
-            cfr_loss = self.cfr.train_on_batch([XCb, XYb], [Tb, TYw0b, TYw1b])
+            # Train cfr using weighted losses from prop, then train prop
+            if self.nc:
+                if self.nt:
+                    Tb_pred = self.prop.predict([XTb, XCb])
+                else:
+                    Tb_pred = self.prop.predict(XCb)
+                w0b = 1 + (1-pt)/pt * Tb_pred/(1-Tb_pred)
+                w1b = 1 + pt/(1-pt) * (1-Tb_pred)/Tb_pred
+                TYw0b = np.vstack([Tb, Yfb, w0b.flatten()]).T
+                TYw1b = np.vstack([Tb, Yfb, w1b.flatten()]).T
+                if self.ny:
+                    cfr_loss = self.cfr.train_on_batch([XCb, XYb], [Tb, TYw0b, TYw1b])
+                else:
+                    cfr_loss = self.cfr.train_on_batch(XCb, [Tb, TYw0b, TYw1b])
+                if self.nt:
+                    prop_loss = self.prop.train_on_batch([XTb, XCb], Tb)
+                else:
+                    prop_loss = self.prop.train_on_batch(XCb, Tb)
 
-            prop_loss = self.prop.train_on_batch([XTb, XCb], Tb)
-            h0_loss = self.h0.train_on_batch([XCb[Tb == 0], XYb[Tb == 0]], Yfb[Tb == 0])
-            h1_loss = self.h1.train_on_batch([XCb[Tb == 1], XYb[Tb == 1]], Yfb[Tb == 1])
+            # Train h0 and h1
+            if self.nc and self.ny:
+                h0_loss = self.h0.train_on_batch([XCb[Tb == 0], XYb[Tb == 0]], Yfb[Tb == 0])
+                h1_loss = self.h1.train_on_batch([XCb[Tb == 1], XYb[Tb == 1]], Yfb[Tb == 1])
+            elif self.nc:
+                h0_loss = self.h0.train_on_batch(XCb[Tb == 0], Yfb[Tb == 0])
+                h1_loss = self.h1.train_on_batch(XCb[Tb == 1], Yfb[Tb == 1])
+            elif self.ny:
+                h0_loss = self.h0.train_on_batch(XYb[Tb == 0], Yfb[Tb == 0])
+                h1_loss = self.h1.train_on_batch(XYb[Tb == 1], Yfb[Tb == 1])
 
             # Report training progress
             do_history = save_history and ((it+1) % h_iters == 0)
@@ -150,7 +194,7 @@ class DrCfr:
             if do_verbose:
                 table_row = '\t'.join(f'{a} {b:.4f}' for a, b in zip('obj h0 h1 imb'.split(),
                                                                      [obj, h0_loss, h1_loss, imb]))
-                print(f'{it+1}\t{table_row}', end='')
+                print(f'{it+1:<4}\t{table_row}', end='')
                 if Ycf is not None:
                     print(f'\tpehe {pehe:.4f}', end='')
                 if val:
@@ -164,23 +208,28 @@ class DrCfr:
             return history
 
     def predict(self, X):
-        XC = X[:, self.nt:-self.ny]
-        XY = X[:, -self.ny:]
-        _, Y0_pred, Y1_pred = self.cfr.predict([XC, XY])
+        XC = X[:, self.nt:self.nt+self.nc]
+        XY = X[:, self.nt+self.nc:]
+        if self.nc and self.ny:
+            _, Y0_pred, Y1_pred = self.cfr.predict([XC, XY])
+        elif self.nc:
+            _, Y0_pred, Y1_pred = self.cfr.predict(XC)
+        elif self.ny:
+            _, Y0_pred, Y1_pred = self.cfr.predict(XY)
         return np.hstack([Y0_pred, Y1_pred])
 
     def build_rep(self, in_dim, h_dim, h_layers, out_dim):
         rep = Sequential(name='rep')
         for _ in range(h_layers):
-            rep.add(Dense(h_dim, activation=activation))
-        rep.add(Dense(out_dim))
+            rep.add(Dense(h_dim, activation=activation, kernel_regularizer=l2(reg)))
+        rep.add(Dense(out_dim, kernel_regularizer=l2(reg)))
         rep.add(Lambda(lambda x: K.l2_normalize(1000*x, axis=1)))
         return rep
 
     def build_pred(self, in_dim, h_dim, h_layers, t):
         pred = Sequential(name=f'h{t}')
         for _ in range(h_layers):
-            pred.add(Dense(h_dim, activation=activation, kernel_regularizer=l2(reg))
+            pred.add(Dense(h_dim, activation=activation, kernel_regularizer=l2(reg)))
         pred.add(Dense(1, kernel_regularizer=l2(reg)))
         return pred
 
