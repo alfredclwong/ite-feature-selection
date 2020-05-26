@@ -3,11 +3,13 @@ import pandas as pd
 from itertools import product
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.metrics import confusion_matrix
 
 from fsite.invase import Invase
 from data.synthetic_data import get_ihdp_XT, get_ihdp_Yb
 from utils.utils import XTY_split, default_env, est_pdf, continue_experiment
 
+default_env(gpu=True)
 hyperparams_shallow = {
     'h_layers_pred':    1,
     'h_dim_pred':       lambda x: 100,  # noqa 272
@@ -19,14 +21,14 @@ hyperparams_shallow = {
 }
 hyperparams_deep = {
     'h_layers_pred':    2,
-    'h_dim_pred':       lambda x: 100,  # noqa 272
+    'h_dim_pred':       lambda x: x * 2,  # noqa 272
     'h_layers_base':    2,
-    'h_dim_base':       lambda x: 100,  # noqa 272
-    'h_layers_sel':     1,
-    'h_dim_sel':        lambda x: 100,  # noqa 272
+    'h_dim_base':       lambda x: x * 2,  # noqa 272
+    'h_layers_sel':     2,
+    'h_dim_sel':        lambda x: x * 2,  # noqa 272
     'optimizer':        'adam'
 }
-save_stuff = True
+save_stuff = False
 headers = 'true naive regr ipw aipw'.split()
 subheaders = 'E[Y0] E[Y1]'.split()
 columns = [f'{a} {b}' for a, b in product(headers, subheaders)]
@@ -36,6 +38,7 @@ n_trials = 1000
 
 def trial(X, T):
     Y, beta = get_ihdp_Yb(X, T, 'B1')
+    print(beta)
     Yf = Y[np.arange(n), T]
 
     # Train the three estimators and make predictions
@@ -44,23 +47,32 @@ def trial(X, T):
     for t in range(n_treatments):
         invases.append(Invase(n_features, 0, 2, hyperparams_deep))
     invases.append(Invase(n_features, n_treatments, .1, hyperparams_shallow))
+
     Y_pred = np.zeros(Y.shape)
     for t in range(n_treatments):
         train_idxs = T_train == t
         test_idxs = T_test == t
-        invases[t].train(X_train[train_idxs], Y_train[train_idxs], 1000,
-                         X_test[test_idxs], Y_test[test_idxs], verbose=False)
+        invases[t].train(X_train[train_idxs], Y_train[train_idxs, None], 800,
+                         X_test=X_test[test_idxs], Y_test=Y_test[test_idxs, None])
         Y_pred[:, t] = invases[t].predict(X).flatten()
-    invases[-1].train(X_train, T_train, 1000, X_test, T_test, verbose=False, imbalanced=True, batch_size=128)
+    invases[-1].train(X_train, T_train, 1000, X_test=X_test, Y_test=T_test, imbalanced=True)
     prop_scores = invases[-1].predict(X)
 
     # Plot heatmaps for each selector
-    # n_sample = 20
-    # s_pred = np.array([invase.predict_features(X_test, threshold=False) for invase in invases])
-    # for i in range(s_pred.shape[0]):
-    #     plt.subplot(s_pred.shape[0], 1, i+1)
-    #     sns.heatmap(s_pred[i, :n_sample].T, vmin=0, vmax=1, cmap='gray', square=True, cbar=False, linewidth=.5)
-    # plt.show()
+    n_sample = 80
+    s_pred = np.array([invase.predict_features(X_test, threshold=False) for invase in invases])
+    for i in range(s_pred.shape[0]):
+        if i < 2:
+            f, axs = plt.subplots(1, n_sample, gridspec_kw={'wspace': 0})
+            sns.heatmap(beta[:, None], vmin=0, vmax=.4, cmap='Reds', square=True, cbar=False, ax=axs[0], linewidth=.5)
+            for j in range(1, n_sample):
+                sns.heatmap(s_pred[i, j, None].T, vmin=0, vmax=1, cmap='gray', square=True, cbar=False, ax=axs[j], linewidth=.5)
+                axs[j].xaxis.set_ticks([])
+                axs[j].yaxis.set_ticks([])
+            plt.savefig(f'../iib-diss/slides/aipw-pred{i}', bbox_inches='tight')
+        else:
+            sns.heatmap(s_pred[i, :n_sample].T, vmin=0, vmax=1, cmap='gray', square=True, cbar=False, linewidth=.5)
+        plt.show()
 
     # Calculate various ATE estimates
     Y_means = np.zeros((len(headers), 2))
@@ -71,14 +83,14 @@ def trial(X, T):
         idxs = T == t
         Y_means[3, t] = np.mean(Yf[idxs] / prop_scores[idxs, t])
         Y_means[4, t] = np.mean((Yf - Y_pred[:, t]) * idxs / prop_scores[np.arange(n), T] + Y_pred[:, t])
+    # print(Y_means)
     return Y_means
 
 
-default_env(gpu=True)
 X, T = get_ihdp_XT()
 n, n_features = X.shape
 n_treatments = np.max(T) + 1
-# trial(X, T)
+trial(X, T)
 if save_stuff:
     continue_experiment(results_path, n_trials, lambda: trial(X, T), columns)
 results = pd.read_csv(results_path, index_col=0).values
@@ -86,20 +98,24 @@ results = pd.read_csv(results_path, index_col=0).values
 print(f'{results.shape[0]} trials')
 print('\t'.join(columns))
 print('\t'.join(map(str, np.mean(results, axis=0).round(8))))
-mae = np.array(results)
-mae[:, ::2] -= results[:, 0, None]
-mae[:, 1::2] -= results[:, 1, None]
-mae = np.mean(np.abs(mae), axis=0)
-print('\t'.join(map(lambda x: f'{str(x)}\t' if x == 0 else str(x), mae.round(8))))
+ae = np.array(results)
+ae[:, ::2] -= results[:, 0, None]
+ae[:, 1::2] -= results[:, 1, None]
+ae = np.abs(ae)
+print('\t'.join(map(lambda x: f'{str(x)}\t' if x == 0 else str(x), np.mean(ae, axis=0).round(8))))
+
 print()
 
 print('\t'.join([f'{s} ATE\t' if s == 'ipw' else f'{s} ATE' for s in headers]))
 ate = results[:, 1::2] - results[:, ::2]
 print('\t'.join(map(str, np.mean(ate, axis=0).round(8))))
-mae = np.array(ate)
-mae -= ate[:, 0, None]
-mae = np.mean(np.abs(mae), axis=0)
-print('\t'.join(map(lambda x: f'{str(x)}\t' if x == 0 else str(x), mae.round(8))))
+ae = np.abs(ate - ate[:, 0, None])
+print('\t'.join(map(lambda x: f'{str(x)}\t' if x == 0 else str(x), np.mean(ae, axis=0).round(8))))
+# print('\t'.join(map(lambda x: f'{str(x)}\t' if x == 0 else str(x), np.max(ae, axis=0).round(8))))
+# print(ae)
+
+df = pd.read_csv(results_path, index_col=0)
+print(df)
 
 # plt.figure(figsize=(4, 2.5))
 # x_grid = np.linspace(0, 20, 100)
