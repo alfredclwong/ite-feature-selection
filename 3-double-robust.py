@@ -6,10 +6,10 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix
 
 from fsite.invase import Invase
-from data.synthetic_data import get_ihdp_XT, get_ihdp_Yb
+from data.synthetic_data import get_ihdp_XT, get_ihdp_Yb, get_ihdp_headers
 from utils.utils import XTY_split, default_env, est_pdf, continue_experiment
 
-default_env(gpu=True)
+default_env(gpu=False)
 hyperparams_shallow = {
     'h_layers_pred':    1,
     'h_dim_pred':       lambda x: 100,  # noqa 272
@@ -63,15 +63,20 @@ def trial(X, T):
     s_pred = np.array([invase.predict_features(X_test, threshold=False) for invase in invases])
     for i in range(s_pred.shape[0]):
         if i < 2:
-            f, axs = plt.subplots(1, n_sample, gridspec_kw={'wspace': 0})
-            sns.heatmap(beta[:, None], vmin=0, vmax=.4, cmap='Reds', square=True, cbar=False, ax=axs[0], linewidth=.5)
+            f, axs = plt.subplots(1, n_sample, gridspec_kw={'wspace': 0}, figsize=(6, 4.2))
+            sns.heatmap(beta[:, None], vmin=0, vmax=.4, cmap='Reds', square=True, cbar=False, ax=axs[0], linewidth=.5,
+                        yticklabels=get_ihdp_headers(), xticklabels=[])
+            axs[0].yaxis.set_tick_params(labelsize=5)
             for j in range(1, n_sample):
                 sns.heatmap(s_pred[i, j, None].T, vmin=0, vmax=1, cmap='gray', square=True, cbar=False, ax=axs[j], linewidth=.5)
                 axs[j].xaxis.set_ticks([])
                 axs[j].yaxis.set_ticks([])
-            plt.savefig(f'../iib-diss/slides/aipw-pred{i}', bbox_inches='tight')
         else:
-            sns.heatmap(s_pred[i, :n_sample].T, vmin=0, vmax=1, cmap='gray', square=True, cbar=False, linewidth=.5)
+            plt.figure(figsize=(6, 4.2))
+            sns.heatmap(s_pred[i, :n_sample].T, vmin=0, vmax=1, cmap='gray', square=True, cbar=False, linewidth=.5,
+                        yticklabels=get_ihdp_headers(), xticklabels=[])
+            plt.yticks(fontsize=5)
+        plt.savefig(f'../iib-diss/graphics/aipw-pred{i}.pdf', bbox_inches='tight')
         plt.show()
 
     # Calculate various ATE estimates

@@ -3,11 +3,22 @@ from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import dirichlet
+from scipy.special import expit
 
 from fsite.invase import Invase
 from data.synthetic_data import synthetic_data, get_YS
 from utils.metrics import tpr_fdr, roc, auc
-from utils.utils import default_env
+from utils.utils import default_env, process
+
+hyperparams = {
+    'h_layers_pred':    2,
+    'h_dim_pred':       lambda x: 100,  # noqa 272
+    'h_layers_base':    2,
+    'h_dim_base':       lambda x: 100,  # noqa 272
+    'h_layers_sel':     2,
+    'h_dim_sel':        lambda x: 100,  # noqa 272
+    'optimizer':        'adam'
+}
 
 
 def run_invase(X, Y, S):
@@ -17,8 +28,8 @@ def run_invase(X, Y, S):
     X_train, X_test, YS_train, YS_test = train_test_split(X, YS, test_size=.2)
     (Y_train, S_train), (Y_test, S_test) = map(lambda arr: np.hsplit(arr, [1]), [YS_train, YS_test])
 
-    invase = Invase(n_features, n_classes)
-    invase.train(X_train, Y_train, 2000, X_test, Y_test, S_test)
+    invase = Invase(n_features, n_classes, 0.1, hyperparams)
+    invase.train(X_train, Y_train, 2000, X_test, Y_test, S_test, verbose=True)
 
     Y_pred = invase.predict(X_test)
     Y_base = invase.predict(X_test, use_baseline=True)
@@ -33,19 +44,26 @@ def run_invase(X, Y, S):
     print(f'TPR: {tpr*100:.1f}% ({tpr10*100:.1f}%)\nFDR: {fdr*100:.1f}% ({fdr10*100:.1f}%)')
 
     # Test: AUC-ROC improved in predictor
-    r_base = roc(Y_test, Y_base[:, 1])
-    r_pred = roc(Y_test, Y_pred[:, 1])
-    a_base = auc(Y_test, Y_base[:, 1])
-    a_pred = auc(Y_test, Y_pred[:, 1])
-    plt.plot(r_base[:, 0], r_base[:, 1])
-    plt.plot(r_pred[:, 0], r_pred[:, 1])
-    plt.legend([f'base ({a_base:.2f})', f'pred ({a_pred:.2f})'])
-    plt.show()
+    # r_base = roc(Y_test, Y_base[:, 1])
+    # r_pred = roc(Y_test, Y_pred[:, 1])
+    # a_base = auc(Y_test, Y_base[:, 1])
+    # a_pred = auc(Y_test, Y_pred[:, 1])
+    # plt.figure(figsize=(3, 3))
+    # plt.plot(r_base[:, 0], r_base[:, 1])
+    # plt.plot(r_pred[:, 0], r_pred[:, 1])
+    # plt.legend([f'base ({a_base:.2f})', f'pred ({a_pred:.2f})'])
+    # plt.xlim([0, 1])
+    # plt.ylim([0, 1])
+    # plt.xlabel('False Positive Rate')
+    # plt.ylabel('True Positive Rate')
+    # plt.savefig('../iib-diss/graphics/overlap-roc.pdf', bbox_inches='tight')
+    # plt.show()
 
     # Plot feature selection heatmap for diagnostics
     s_pred = invase.predict_features(X_test, threshold=None)
-    sns.heatmap(s_pred[:100].T, center=.5, vmin=0, vmax=1, cmap='gray', square=True, cbar=False, linewidth=.5)
-    plt.show()
+    return s_pred
+    # sns.heatmap(s_pred[:100].T, center=.5, vmin=0, vmax=1, cmap='gray', square=True, cbar=False, linewidth=.5)
+    # plt.show()
 
 
 # 1. Models with overlapping feature sets
@@ -103,7 +121,25 @@ def split(n_splits=10):
 
 # 4. Graded effect modifiers
 def graded():
-    pass
+    X = np.random.standard_normal((10000, 200))
+    grades = np.power(np.arange(X.shape[1]), 3)
+    Y = X @ grades / grades.max() * 2
+    Y = np.random.binomial(1, p=expit(Y))
+    S = np.ones(X.shape)
+
+    s_preds = np.zeros((10, 200))
+    for i in range(s_preds.shape[0]):
+        s_preds[i] = run_invase(X, Y[:, None], S).mean(0)
+    plt.figure(figsize=(3, 2))
+    # plt.plot(process(np.mean(s_preds, axis=0), 10))
+    plt.plot(np.mean(s_preds, axis=0))
+    plt.plot(grades / grades.max(), ls=':')
+    plt.xlim([0, s_preds.shape[1]])
+    plt.ylim([0, 1])
+    plt.xlabel('Feature #')
+    plt.ylabel('Selection Probability')
+    plt.savefig('../iib-diss/graphics/graded2.pdf', bbox_inches='tight')
+    plt.show()
 
 
 # 5. Long causal paths
@@ -112,4 +148,6 @@ def graded():
 if __name__ == '__main__':
     default_env()
     # overlap_test()
-    split()
+    # clones()
+    # split()
+    graded()
