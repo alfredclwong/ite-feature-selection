@@ -164,10 +164,13 @@ class OurNet:
             if not do_history and not do_verbose:
                 continue
 
-            obj, imb, h0_cfr, h1_cfr = cfr_loss
-            # obj = imb = cfr_loss
-            if alpha != 0:
-                imb /= alpha
+            if self.nc:
+                obj, imb, h0_cfr, h1_cfr = cfr_loss
+                # obj = imb = cfr_loss
+                if alpha != 0:
+                    imb /= alpha
+            else:
+                obj = imb = 0
             if Ycf is not None:
                 Y_pred = self.predict(X)
                 pehe = PEHE(Y, Y_pred)
@@ -215,7 +218,8 @@ class OurNet:
         elif self.nc:
             _, Y0_pred, Y1_pred = self.cfr.predict(XC)
         elif self.ny:
-            _, Y0_pred, Y1_pred = self.cfr.predict(XY)
+            Y0_pred = self.h0.predict(XY)
+            Y1_pred = self.h1.predict(XY)
         return np.hstack([Y0_pred, Y1_pred])
 
     def build_rep(self, in_dim, h_dim, h_layers, out_dim):

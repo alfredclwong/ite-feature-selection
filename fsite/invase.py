@@ -6,9 +6,12 @@ import keras.backend as K
 import numpy as np
 from tqdm import tqdm
 from imblearn.over_sampling import SMOTE
+from sklearn.metrics import confusion_matrix
+from keras.callbacks import EarlyStopping
 
 
 eps = 1e-8
+reg = None
 
 default_hyperparams = {
     'h_layers_pred':    1,
@@ -83,8 +86,8 @@ class Invase:
         X = Input((self.n_features,))
         H = X
         for _ in range(h_layers):
-            H = Dense(h_dim, activation='relu', kernel_regularizer=l2())(X)
-        y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
+            H = Dense(h_dim, activation='relu', kernel_regularizer=reg)(H)
+        y = Dense(self.n_classes, activation='softmax', kernel_regularizer=reg)(H) if self.n_classes else Dense(1)(H)
         return Model(X, y)
 
     def __build_predictor(self, h_layers, h_dim):
@@ -93,22 +96,25 @@ class Invase:
         H = Multiply()([X, s])         # suppressed
         H = Concatenate()([H, s])      # concatenated for distinguishing suppressed features from 0-valued features
         for _ in range(h_layers):
-            H = Dense(h_dim, activation='relu', kernel_regularizer=l2())(H)
-        y = Dense(self.n_classes, activation='softmax')(H) if self.n_classes else Dense(1)(H)
+            H = Dense(h_dim, activation='relu', kernel_regularizer=reg)(H)
+        y = Dense(self.n_classes, activation='softmax', kernel_regularizer=reg)(H) if self.n_classes else Dense(1)(H)
         return Model([X, s], y)
 
     def __build_selector(self, h_layers, h_dim):
         X = Input((self.n_features,))
         H = X
         for _ in range(h_layers):
-            H = Dense(h_dim, activation='relu', kernel_regularizer=l2())(H)
+            H = Dense(h_dim, activation='relu', kernel_regularizer=reg)(H)
         S = Dense(self.n_features, activation='sigmoid')(H)  # selection probability vector
         return Model(X, S)
 
-    def train(self, X, Y, n_iters, X_test=None, Y_test=None, S_true=None,
-              batch_size=1024, verbose=True, save_history=False, imbalanced=False):
+    def train(self, X, Y, n_iters, X_test=None, Y_test=None, X_val=None, Y_val=None, S_true=None,
+              batch_size=128, verbose=False, save_history=False, imbalanced=False, silent=False):
         # Check array dims. If Y is a class vector (e.g. [0, 1, 2, 0]) then change it to one-hot encoding
+        # val = X_val is not None and Y_val is not None
         test = X_test is not None and Y_test is not None
+        # if val:
+        #     es = EarlyStopping(monitor='val_loss')
         if imbalanced:
             sm = SMOTE()
             X, Y = sm.fit_resample(X, Y)
@@ -116,6 +122,7 @@ class Invase:
             Y = to_categorical(Y, num_classes=self.n_classes)
             if test:
                 Y_test = to_categorical(Y_test, num_classes=self.n_classes)
+        assert len(Y.shape) == 2 and (not test or len(Y_test.shape) == 2)
         n = X.shape[0]
 
         # Prep for metric outputs during and after training
@@ -131,7 +138,8 @@ class Invase:
         } if h_iters else None
 
         # Train
-        for it in tqdm(range(1, 1+n_iters)):
+        iterator = tqdm(range(1, 1+n_iters)) if not silent else range(1, 1+n_iters)
+        for it in iterator:
             idx = np.random.randint(n, size=batch_size)                       # random batch
             S = np.nan_to_num(self.selector.predict(X[idx]))                  # selector probs
             s = np.random.binomial(1, S, size=(batch_size, self.n_features))  # sample from S
@@ -151,6 +159,8 @@ class Invase:
             sele_loss = self.selector.train_on_batch(X[idx], sY)
 
             # Record/output metrics at appropriate intervals
+            if silent:
+                continue
             if (h_iters and it % h_iters == 0) or (v_iters and it % v_iters == 0) or it == n_iters:
                 # Calculate
                 if self.n_classes:
@@ -196,6 +206,8 @@ class Invase:
                     if test:
                         print(f'\tpred {metric_str} (test)\t{metric_test[0]:.4f}' +
                               f'\tbase {metric_str} (test)\t{metric_test[1]:.4f}')
+                        if self.n_classes:
+                            print(confusion_matrix(np.argmax(Y_test, axis=1), np.argmax(self.predict(X_test), axis=1)))
                     feature_formatter = {'float_kind': '{0:.2f}'.format}
                     S_mean = np.mean(S, axis=0)
                     S_mean_str = np.array2string(S_mean, formatter=feature_formatter)

@@ -206,8 +206,6 @@ def get_YS(X, n_treatments=2, models=None, binary=True, noise=False, permute=Fal
     if permute:
         perm = np.random.choice(n_features, n_features, replace=False)
         inv = [np.where(perm == p)[0][0] for p in range(n_features)]
-        print(perm)
-        print(inv)
         X = X[:, perm]
 
     n_treatments = len(models)
