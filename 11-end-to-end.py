@@ -12,6 +12,7 @@ import statsmodels.api as sm
 from keras.models import Sequential
 from keras.layers import Dense
 import pandas as pd
+import os
 default_env(gpu=True)
 class Logger(object):
     def __init__(self):
@@ -24,7 +25,7 @@ class Logger(object):
 
     def flush(self):
         pass
-sys.stdout = Logger()
+# sys.stdout = Logger()
 n_treatments = 2
 
 
@@ -34,14 +35,14 @@ def full_trial(X_train, T_train, Yf_train, Ycf_train,
     print('invase')
     # Disentanglement stage
     invases = [
-        Invase(n_features, n_treatments, 0.1),
-        Invase(n_features, 0, 1.5),
-        Invase(n_features, 0, 1.5),
+        Invase(n_features, n_treatments, .1),
+        Invase(n_features, 0, .1),
+        Invase(n_features, 0, .1),
     ]
     selection = []
     for invase, target in zip(invases, [T_train, Yf_train[:, None], Yf_train[:, None]]):
-        invase.train(X_train, target, 1000, silent=True)
-        S_pred = invase.predict_features(X_train, .3).mean(axis=0) > .5
+        invase.train(X_train, target, 1000, silent=False)
+        S_pred = invase.predict_features(X_train, .5).mean(axis=0) > .5
         selection.append(np.where(S_pred)[0].tolist())
     selection = [
         list(set(selection[0]) - set(selection[1]) - set(selection[2])),
@@ -215,5 +216,39 @@ paths_50k = {
     'counterfactuals':  'data/LBIDD-50k/scaling/',
     'predictions':      'data/results-50k/',
 }
-x = pd.read_csv(paths_50k['covariates'])
-print(x)
+paths = paths_50k
+index_col = 'sample_id'
+x = pd.read_csv(paths['covariates'], index_col=index_col)
+ufids = [s[:-7] for s in os.listdir(paths['counterfactuals']) if s.endswith('_cf.csv')]
+for i, ufid in enumerate(ufids):
+    print(f'{i+1}/{len(ufids)}')
+    Yf = pd.read_csv(os.path.join(paths['factuals'], f'{ufid}.csv'), index_col=index_col)
+    Ycf = pd.read_csv(os.path.join(paths['counterfactuals'], f'{ufid}_cf.csv'), index_col=index_col)
+    df = x.join([Yf, Ycf], how='inner')
+    X = df.values[:, :-4]
+    X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
+    n, n_features = X.shape
+    n_train = int(.7 * n)
+    n_test = int(.2 * n)
+    T = df['z'].values
+    Yf = df['y'].values
+    Y = np.zeros((n, 2))
+    Y[:, 0] = df['y0'].values
+    Y[:, 1] = df['y1'].values
+    Ycf = Y[np.arange(n), 1-T]
+
+    full_trial(X[:n_train], T[:n_train], Yf[:n_train], Ycf[:n_train],
+               X[n_train:-n_test], T[n_train:-n_test], Yf[n_train:-n_test], Ycf[n_train:-n_test],
+               X[-n_test:], T[-n_test:], Yf[-n_test:], Ycf[-n_test:])
+    print()
+    xc_trial(X[:n_train], T[:n_train], Yf[:n_train], Ycf[:n_train],
+             X[n_train:-n_test], T[n_train:-n_test], Yf[n_train:-n_test], Ycf[n_train:-n_test],
+             X[-n_test:], T[-n_test:], Yf[-n_test:], Ycf[-n_test:])
+    print()
+    ols_trial(X[:n_train], T[:n_train], Yf[:n_train], Ycf[:n_train],
+              X[n_train:-n_test], T[n_train:-n_test], Yf[n_train:-n_test], Ycf[n_train:-n_test],
+              X[-n_test:], T[-n_test:], Yf[-n_test:], Ycf[-n_test:])
+    print()
+    nn_trial(X[:n_train], T[:n_train], Yf[:n_train], Ycf[:n_train],
+             X[n_train:-n_test], T[n_train:-n_test], Yf[n_train:-n_test], Ycf[n_train:-n_test],
+             X[-n_test:], T[-n_test:], Yf[-n_test:], Ycf[-n_test:])
